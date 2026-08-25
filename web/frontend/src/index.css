@@ -2066,6 +2066,11 @@ input, select {
   color: white;
 }
 
+.status-pending {
+  background-color: #f59e0b;
+  color: white;
+}
+
 .status-deactivated {
   background-color: #ef4444;
   color: white;

@@ -33,7 +33,8 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _showPass = false;
   bool _showConfirm = false;
   bool _loading = false;
-  String _generatedOtp = '';
+  bool _sendingCode = false;
+  bool _codeSent = false;
 
   @override
   void dispose() {
@@ -47,13 +48,27 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  void _generateOtp() {
-    final code = (100000 + DateTime.now().millisecond * 7 % 900000)
-        .toString()
-        .padLeft(6, '0')
-        .substring(0, 6);
-    setState(() => _generatedOtp = code);
-    _showMessage('Demo OTP generated: $code');
+  Future<void> _sendCode() async {
+    final email = _emailCtrl.text.trim();
+    if (email.isEmpty) {
+      _showMessage("Enter your email first.");
+      return;
+    }
+
+    setState(() => _sendingCode = true);
+
+    final err = await UserSession.sendSignupCode(email);
+
+    if (!mounted) return;
+    setState(() => _sendingCode = false);
+
+    if (err != null) {
+      _showMessage(err);
+      return;
+    }
+
+    setState(() => _codeSent = true);
+    _showMessage('Verification code sent to $email');
   }
 
   Future<void> _createAccount() async {
@@ -61,7 +76,7 @@ class _RegisterPageState extends State<RegisterPage> {
     final last = _lastCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final teacherId = _teacherIdCtrl.text.trim();
-    final otp = _otpCtrl.text.trim();
+    final code = _otpCtrl.text.trim();
     final pass = _passCtrl.text.trim();
     final confirm = _confirmCtrl.text.trim();
     final department = _selectedDepartment ?? '';
@@ -73,20 +88,10 @@ class _RegisterPageState extends State<RegisterPage> {
         teacherId.isEmpty ||
         department.isEmpty ||
         staffType.isEmpty ||
-        otp.isEmpty ||
+        code.isEmpty ||
         pass.isEmpty ||
         confirm.isEmpty) {
       _showMessage("Please fill out all fields.");
-      return;
-    }
-
-    if (_generatedOtp.isEmpty) {
-      _showMessage("Generate OTP first.");
-      return;
-    }
-
-    if (otp != _generatedOtp) {
-      _showMessage("OTP does not match the generated code.");
       return;
     }
 
@@ -105,7 +110,7 @@ class _RegisterPageState extends State<RegisterPage> {
       teacherId: teacherId,
       department: department,
       staffType: staffType,
-      otp: otp,
+      code: code,
     );
 
     if (!mounted) return;
@@ -117,7 +122,9 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    _showMessage("Account successfully created.");
+    _showMessage(
+      "Account created. Please wait for admin approval before logging in.",
+    );
 
     Navigator.pushReplacement(
       context,
@@ -193,7 +200,7 @@ class _RegisterPageState extends State<RegisterPage> {
                               ),
                               SizedBox(height: 4),
                               Text(
-                                'Create a school staff account',
+                                'Create your BewAir account',
                                 style: TextStyle(color: Color(0xFF64748B)),
                               ),
                             ],
@@ -261,19 +268,21 @@ class _RegisterPageState extends State<RegisterPage> {
                       },
                     ),
                     const SizedBox(height: 14),
-                    _label("OTP"),
+                    _label("Verification Code"),
                     Row(
                       children: [
                         Expanded(
                           child: TextField(
                             controller: _otpCtrl,
                             keyboardType: TextInputType.number,
-                            decoration: _fieldDeco(hint: 'Enter 6-digit OTP'),
+                            decoration: _fieldDeco(
+                              hint: 'Enter code sent to your email',
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
                         ElevatedButton(
-                          onPressed: _generateOtp,
+                          onPressed: _sendingCode ? null : _sendCode,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFE9F5FF),
                             foregroundColor: const Color(0xFF1E88FF),
@@ -283,15 +292,24 @@ class _RegisterPageState extends State<RegisterPage> {
                               borderRadius: BorderRadius.circular(16),
                             ),
                           ),
-                          child: const Text('Generate'),
+                          child: _sendingCode
+                              ? const SizedBox(
+                                  height: 18,
+                                  width: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF1E88FF),
+                                  ),
+                                )
+                              : const Text('Send Code'),
                         ),
                       ],
                     ),
-                    if (_generatedOtp.isNotEmpty) ...[
+                    if (_codeSent) ...[
                       const SizedBox(height: 8),
-                      Text(
-                        'Demo OTP: $_generatedOtp',
-                        style: const TextStyle(
+                      const Text(
+                        'Verification code sent to your email.',
+                        style: TextStyle(
                           color: Color(0xFF0F766E),
                           fontWeight: FontWeight.w600,
                         ),

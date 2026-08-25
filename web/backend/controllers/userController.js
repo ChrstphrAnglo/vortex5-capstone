@@ -1,11 +1,46 @@
 const User = require('../models/userModel')
+const EmailVerification = require('../models/emailVerificationModel')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
 const validator = require('validator')
 const logAudit = require('../utils/logAudit');
+const sendVerificationEmail = require('../utils/sendVerificationEmail')
 
 const createToken = (_id) => {
    return jwt.sign({_id}, process.env.SECRET, {expiresIn: '3d'})
+}
+
+const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString()
+
+// POST /api/user/signup/send-code — email a 6-digit verification code
+const sendSignupCode = async (req, res) => {
+    const { email } = req.body
+
+    if (!email || !validator.isEmail(email)) {
+        return res.status(400).json({ error: 'A valid email is required' })
+    }
+
+    try {
+        const existingUser = await User.findOne({ email })
+        if (existingUser) {
+            return res.status(400).json({ error: 'Email already in use' })
+        }
+
+        const code = generateCode()
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+
+        await EmailVerification.findOneAndUpdate(
+            { email },
+            { code, expiresAt, attempts: 0 },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        )
+
+        await sendVerificationEmail(email, code)
+
+        res.status(200).json({ message: 'Verification code sent' })
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to send verification code' })
+    }
 }
 
 const loginUser = async (req, res) => {
@@ -29,22 +64,50 @@ const loginUser = async (req, res) => {
 }
 
 const signupUser = async (req, res) => {
-    const {email, password, firstName, lastName} = req.body
+    const {email, password, firstName, lastName, teacherId, department, staffType, code} = req.body
 
     try {
-        // First account in the system becomes admin automatically.
-        // Everyone else signs up as staff. Public signup cannot self-elevate to admin.
+        if (!code) {
+            throw Error('Verification code is required')
+        }
+
+        const verification = await EmailVerification.findOne({ email })
+        if (!verification || verification.expiresAt < new Date()) {
+            throw Error('Code expired or not found. Request a new one.')
+        }
+        if (verification.attempts >= 5) {
+            throw Error('Too many incorrect attempts. Request a new code.')
+        }
+        if (verification.code !== code) {
+            verification.attempts += 1
+            await verification.save()
+            throw Error('Invalid code.')
+        }
+        await EmailVerification.deleteOne({ email })
+
+        // First account in the system becomes admin automatically and is active immediately
+        // (there's no one else to approve them). Everyone else signs up as staff, pending
+        // admin approval — they cannot log in until approved. Public signup cannot self-elevate
+        // to admin.
         const userCount = await User.countDocuments()
         const role = userCount === 0 ? 'admin' : 'staff'
+        const status = userCount === 0 ? 'active' : 'pending'
 
-        const user = await User.signup(email, password, firstName, lastName, role)
-        const token = createToken(user._id)
+        const user = await User.signup(email, password, firstName, lastName, role, { teacherId, department, staffType, status })
 
         logAudit({
             module: 'User',
-            action: `New user registered: ${firstName} ${lastName} (${email}) as ${role}`,
+            action: `New user registered: ${firstName} ${lastName} (${email}) as ${role} (${status})`,
             user: email
         })
+
+        if (status !== 'active') {
+            return res.status(200).json({
+                message: 'Account created. An admin needs to approve your account before you can log in.'
+            })
+        }
+
+        const token = createToken(user._id)
 
         res.status(200).json({
             email: user.email,
@@ -69,7 +132,7 @@ const createUserByAdmin = async (req, res) => {
     }
 
     try {
-        const user = await User.signup(email, password, firstName, lastName, role)
+        const user = await User.signup(email, password, firstName, lastName, role, { status: 'active' })
 
         logAudit({
             module: 'User',
@@ -162,6 +225,34 @@ const reactivateUser = async (req, res) => {
             message: 'User reactivated successfully',
             user 
         })
+    } catch (error) {
+        res.status(400).json({ error: error.message })
+    }
+}
+
+const approveUser = async (req, res) => {
+    const { id } = req.params
+
+    try {
+        const target = await User.findById(id)
+        if (!target) {
+            return res.status(404).json({ error: 'User not found' })
+        }
+        if (target.status !== 'pending') {
+            return res.status(400).json({ error: 'User is not pending approval' })
+        }
+
+        target.status = 'active'
+        await target.save()
+
+        await logAudit({
+            module: 'User',
+            action: `User ${target.firstName} ${target.lastName} (${target.email}) was approved`,
+            user: req.user?.email || 'Unknown'
+        })
+
+        const user = await User.findById(id).select('-password')
+        res.status(200).json(user)
     } catch (error) {
         res.status(400).json({ error: error.message })
     }
@@ -291,11 +382,13 @@ const changeMyPassword = async (req, res) => {
 
 module.exports = {
     signupUser,
+    sendSignupCode,
     loginUser,
     getUsers,
     createUserByAdmin,
     deactivateUser,
     reactivateUser,
+    approveUser,
     updateUserRole,
     getMyProfile,
     updateMyProfile,

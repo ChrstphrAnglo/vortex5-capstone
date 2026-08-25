@@ -29,3 +29,6 @@ firmware/bewair_node/build/
 
 # Firmware secrets
 firmware/bewair_node/secrets.h
+
+# Claude Code project docs (local-only)
+CLAUDE.md

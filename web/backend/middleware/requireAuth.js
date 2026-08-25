@@ -13,6 +13,7 @@ const requireAuth = async (req, res, next) => {
     const user = await User.findById(_id).select('-password')
     if (!user) return res.status(401).json({ error: 'User not found' })
     if (user.status === 'deactivated') return res.status(403).json({ error: 'Account deactivated' })
+    if (user.status === 'pending') return res.status(403).json({ error: 'Account pending admin approval' })
     req.user = user
     next()
   } catch (err) {

@@ -26,9 +26,21 @@ const userSchema = new Schema ({
         type: String,
         required: true
     },
+    teacherId: {
+        type: String,
+        default: ''
+    },
+    department: {
+        type: String,
+        default: ''
+    },
+    staffType: {
+        type: String,
+        default: ''
+    },
     status: {
         type: String,
-        enum: ['active', 'deactivated'],
+        enum: ['pending', 'active', 'deactivated'],
         default: 'active',
         required: true
     },
@@ -45,8 +57,8 @@ const userSchema = new Schema ({
 })
 
 // static signup method
-userSchema.statics.signup = async function (email, password, firstName, lastName, role) {
-    
+userSchema.statics.signup = async function (email, password, firstName, lastName, role, extra = {}) {
+
     if (!email || !password || !firstName || !lastName || !role){
         throw Error ('All fields must be filled')
     }
@@ -54,7 +66,7 @@ userSchema.statics.signup = async function (email, password, firstName, lastName
     if (!validator.isEmail(email)) {
         throw Error('Email is not valid')
     }
-    
+
     if (!validator.isStrongPassword(password)){
         throw Error('Password not strong enough')
     }
@@ -68,7 +80,9 @@ userSchema.statics.signup = async function (email, password, firstName, lastName
     const salt = await bcrypt.genSalt(10)
     const hash = await bcrypt.hash(password, salt)
 
-    const user = await this.create({email, password: hash, firstName, lastName, role})
+    const { teacherId = '', department = '', staffType = '', status = 'active' } = extra
+
+    const user = await this.create({email, password: hash, firstName, lastName, role, teacherId, department, staffType, status})
 
     return user
 }
@@ -88,6 +102,10 @@ userSchema.statics.login = async function(email, password){
 
     if (user.status === 'deactivated') {
         throw Error('Account has been deactivated. Please contact support.')
+    }
+
+    if (user.status === 'pending') {
+        throw Error('Your account is pending admin approval.')
     }
 
     const match = await bcrypt.compare(password, user.password)

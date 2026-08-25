@@ -202,6 +202,33 @@ class UserSession {
   }
 
   // ===========================
+  // SEND SIGNUP VERIFICATION CODE
+  // ===========================
+  static Future<String?> sendSignupCode(String email) async {
+    final uri = Uri.parse("$baseUrl$userBasePath/signup/send-code");
+
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"email": email.trim()}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return null;
+      }
+
+      return data["error"]?.toString() ?? "Failed to send verification code.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  // ===========================
   // REGISTER
   // ===========================
   static Future<String?> register({
@@ -212,7 +239,7 @@ class UserSession {
     required String teacherId,
     required String department,
     required String staffType,
-    required String otp,
+    required String code,
   }) async {
     final passErr = validateStrongPassword(password);
     if (passErr != null) return passErr;
@@ -229,8 +256,8 @@ class UserSession {
       return "Staff type is required.";
     }
 
-    if (!RegExp(r'^\d{6}$').hasMatch(otp.trim())) {
-      return "OTP must be a 6-digit code.";
+    if (!RegExp(r'^\d{6}$').hasMatch(code.trim())) {
+      return "Verification code must be a 6-digit code.";
     }
 
     final uri = Uri.parse("$baseUrl$userBasePath/signup");
@@ -248,8 +275,7 @@ class UserSession {
               "teacherId": teacherId.trim(),
               "department": department.trim(),
               "staffType": staffType.trim(),
-              "otp": otp.trim(),
-              "role": "staff",
+              "code": code.trim(),
             }),
           )
           .timeout(const Duration(seconds: 60));

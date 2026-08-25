@@ -2,11 +2,13 @@ const express = require('express')
 const { requireAuth, requireAdmin } = require('../middleware/requireAuth')
 const {
     signupUser,
+    sendSignupCode,
     loginUser,
     getUsers,
     createUserByAdmin,
     deactivateUser,
     reactivateUser,
+    approveUser,
     updateUserRole,
     getMyProfile,
     updateMyProfile,
@@ -17,6 +19,7 @@ const router = express.Router()
 
 // Public auth routes
 router.post('/login', loginUser)
+router.post('/signup/send-code', sendSignupCode)
 router.post('/signup', signupUser)
 
 // Self-service routes (any authenticated user)
@@ -29,6 +32,7 @@ router.get('/',                    requireAuth, requireAdmin, getUsers)
 router.post('/',                   requireAuth, requireAdmin, createUserByAdmin)
 router.patch('/:id/deactivate',    requireAuth, requireAdmin, deactivateUser)
 router.patch('/:id/reactivate',    requireAuth, requireAdmin, reactivateUser)
+router.patch('/:id/approve',       requireAuth, requireAdmin, approveUser)
 router.patch('/:id',               requireAuth, requireAdmin, updateUserRole)
 
 module.exports = router

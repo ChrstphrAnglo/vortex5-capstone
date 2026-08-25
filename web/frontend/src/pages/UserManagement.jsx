@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useAuthContext } from "../hooks/useAuthContext"
-import { Shield, UserCheck, Eye, Power } from "lucide-react"
+import { Shield, UserCheck, Eye, Power, Clock, CheckCircle } from "lucide-react"
 
 const USERS_PER_PAGE = 10
 
@@ -136,6 +136,30 @@ const UserManagement = () => {
         }
     }
 
+    // ================= APPROVE USER =================
+    const confirmApprove = async (userId) => {
+        const res = await fetch(`/api/user/${userId}/approve`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${user.token}`
+            }
+        })
+
+        if (res.ok) {
+            setUsers(users.map(u =>
+                u._id === userId ? { ...u, status: 'active' } : u
+            ))
+            setViewUser(null)
+            setSuccessMessage('User approved successfully')
+            setTimeout(() => setSuccessMessage(''), 2000)
+        } else {
+            const error = await res.json()
+            setSuccessMessage('Error: ' + error.error)
+            setTimeout(() => setSuccessMessage(''), 2000)
+        }
+    }
+
     // ================= CONFIRM ROLE CHANGES =================
     const confirmRoleChanges = async () => {
         for (const userId in pendingRoles) {
@@ -195,7 +219,8 @@ const UserManagement = () => {
         setUsers(prev => [data, ...prev])
         setCreateOpen(false)
         setCreateForm({ firstName: '', lastName: '', email: '', password: '', role: 'staff' })
-        setSuccessMessage(`${role === 'admin' ? 'Admin' : 'Staff'} account created for ${data.email}`)
+        const roleLabel = role.charAt(0).toUpperCase() + role.slice(1)
+        setSuccessMessage(`${roleLabel} account created for ${data.email}`)
         setTimeout(() => setSuccessMessage(''), 3000)
     }
 
@@ -317,6 +342,7 @@ const UserManagement = () => {
 
                                     <td className="user-status">
                                         <span className={`status-badge status-${u.status || 'active'}`}>
+                                            {u.status === 'pending' && <Clock size={12} style={{ marginRight: 4 }} />}
                                             {u.status || 'active'}
                                         </span>
                                     </td>
@@ -331,6 +357,16 @@ const UserManagement = () => {
                                                 >
                                                     <Eye size={16} />
                                                 </button>
+
+                                                {u.status === 'pending' && (
+                                                    <button
+                                                        className="icon-btn approve-btn"
+                                                        onClick={() => confirmApprove(u._id)}
+                                                        title="Approve User"
+                                                    >
+                                                        <CheckCircle size={16} />
+                                                    </button>
+                                                )}
 
                                                 {u.status === 'active' && (
                                                     <button
@@ -516,6 +552,15 @@ const UserManagement = () => {
                                     {viewUser.role === "admin" && <Shield size={14} />}
                                     {viewUser.role === "staff" && <UserCheck size={14} />}
                                 </p>
+                                {viewUser.teacherId && (
+                                    <p><strong>Teacher ID:</strong> {viewUser.teacherId}</p>
+                                )}
+                                {viewUser.department && (
+                                    <p><strong>Department:</strong> {viewUser.department}</p>
+                                )}
+                                {viewUser.staffType && (
+                                    <p><strong>Staff Type:</strong> {viewUser.staffType}</p>
+                                )}
                                 <p>
                                     <strong>Date Joined:</strong>{" "}
                                     {viewUser.createdAt 
@@ -550,6 +595,14 @@ const UserManagement = () => {
                                         onClick={() => confirmReactivate(viewUser._id)}
                                     >
                                         Reactivate User
+                                    </button>
+                                )}
+                                {viewUser.status === 'pending' && (
+                                    <button
+                                        className="btn btn-primary"
+                                        onClick={() => confirmApprove(viewUser._id)}
+                                    >
+                                        Approve User
                                     </button>
                                 )}
                                 <button
