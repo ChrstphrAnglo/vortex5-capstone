@@ -14,6 +14,7 @@ const {
     getMyProfile,
     updateMyProfile,
     changeMyPassword,
+    deleteMyAccount,
 } = require('../controllers/userController')
 
 const router = express.Router()
@@ -27,6 +28,7 @@ router.post('/signup', signupUser)
 router.get('/me',            requireAuth, getMyProfile)
 router.patch('/me',          requireAuth, updateMyProfile)
 router.post('/me/password',  requireAuth, changeMyPassword)
+router.delete('/me',         requireAuth, deleteMyAccount)
 
 // Admin-only user management
 router.get('/',                    requireAuth, requireAdmin, getUsers)

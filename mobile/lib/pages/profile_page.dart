@@ -154,6 +154,63 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
+  Future<void> _deleteAccount() async {
+    final passwordCtrl = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete Account'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'This will permanently delete your account and cannot be undone.',
+                style: TextStyle(color: Colors.red),
+              ),
+              const SizedBox(height: 16),
+              _field(passwordCtrl, 'Confirm your password', obscureText: true),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final err = await UserSession.deleteAccount(passwordCtrl.text);
+
+    if (!mounted) return;
+
+    if (err != null) {
+      messenger.showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+
+    await UserSession.logout();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (route) => false,
+    );
+  }
+
   Future<void> _signOut() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -299,6 +356,14 @@ class _ProfilePageState extends State<ProfilePage> {
                   label: 'Sign Out',
                   subtitle: 'Log out of your account',
                   onTap: _signOut,
+                  danger: true,
+                ),
+                const Divider(height: 1, indent: 56),
+                _settingsTile(
+                  icon: Icons.delete_forever_rounded,
+                  label: 'Delete Account',
+                  subtitle: 'Permanently delete your account',
+                  onTap: _deleteAccount,
                   danger: true,
                 ),
               ],

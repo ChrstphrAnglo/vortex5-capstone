@@ -410,6 +410,40 @@ const changeMyPassword = async (req, res) => {
     }
 }
 
+// DELETE /api/user/me — current user deletes their own account.
+// Admins cannot self-delete this way, to avoid ever locking everyone out.
+const deleteMyAccount = async (req, res) => {
+    const { password } = req.body
+
+    if (!password) {
+        return res.status(400).json({ error: 'Password is required' })
+    }
+
+    try {
+        const user = await User.findById(req.user._id)
+        if (!user) return res.status(404).json({ error: 'User not found' })
+
+        if (user.role === 'admin') {
+            return res.status(400).json({ error: 'Admin accounts cannot be self-deleted. Please contact another admin.' })
+        }
+
+        const match = await bcrypt.compare(password, user.password)
+        if (!match) return res.status(400).json({ error: 'Incorrect password' })
+
+        await User.findByIdAndDelete(user._id)
+
+        await logAudit({
+            module: 'User',
+            action: `User ${user.firstName} ${user.lastName} (${user.email}) deleted their own account`,
+            user: user.email
+        })
+
+        res.status(200).json({ message: 'Account deleted successfully' })
+    } catch (error) {
+        res.status(400).json({ error: error.message })
+    }
+}
+
 module.exports = {
     signupUser,
     sendSignupCode,
@@ -424,4 +458,5 @@ module.exports = {
     getMyProfile,
     updateMyProfile,
     changeMyPassword,
+    deleteMyAccount,
 }

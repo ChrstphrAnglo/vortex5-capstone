@@ -181,6 +181,40 @@ class UserSession {
   }
 
   // ===========================
+  // DELETE MY ACCOUNT
+  // ===========================
+  static Future<String?> deleteAccount(String password) async {
+    final u = current;
+    if (u == null) return "Not logged in.";
+    if (password.trim().isEmpty) return "Password is required.";
+
+    final uri = Uri.parse("$baseUrl$userBasePath/me");
+
+    try {
+      final res = await http
+          .delete(
+            uri,
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer ${u.token}",
+            },
+            body: jsonEncode({"password": password}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return null;
+      }
+
+      return data["error"]?.toString() ?? "Failed to delete account.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  // ===========================
   // PASSWORD VALIDATION
   // ===========================
   static String? validateStrongPassword(String password) {
