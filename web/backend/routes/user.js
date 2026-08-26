@@ -8,6 +8,7 @@ const {
     createUserByAdmin,
     deactivateUser,
     reactivateUser,
+    deleteUser,
     approveUser,
     updateUserRole,
     getMyProfile,
@@ -34,5 +35,6 @@ router.patch('/:id/deactivate',    requireAuth, requireAdmin, deactivateUser)
 router.patch('/:id/reactivate',    requireAuth, requireAdmin, reactivateUser)
 router.patch('/:id/approve',       requireAuth, requireAdmin, approveUser)
 router.patch('/:id',               requireAuth, requireAdmin, updateUserRole)
+router.delete('/:id',              requireAuth, requireAdmin, deleteUser)
 
 module.exports = router

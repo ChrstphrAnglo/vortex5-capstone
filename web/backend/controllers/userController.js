@@ -230,6 +230,36 @@ const reactivateUser = async (req, res) => {
     }
 }
 
+// Admin-only: permanently delete a user account. Unlike deactivate, this
+// removes the document entirely — no other collection references User by
+// ID, so no further cleanup is needed.
+const deleteUser = async (req, res) => {
+    const { id } = req.params
+
+    if (req.user._id.toString() === id) {
+        return res.status(400).json({ error: 'You cannot delete your own account' })
+    }
+
+    try {
+        const target = await User.findById(id)
+        if (!target) {
+            return res.status(404).json({ error: 'User not found' })
+        }
+
+        await User.findByIdAndDelete(id)
+
+        await logAudit({
+            module: 'User',
+            action: `User ${target.firstName} ${target.lastName} (${target.email}) was permanently deleted`,
+            user: req.user?.email || 'Unknown'
+        })
+
+        res.status(200).json({ message: 'User deleted successfully' })
+    } catch (error) {
+        res.status(400).json({ error: error.message })
+    }
+}
+
 const approveUser = async (req, res) => {
     const { id } = req.params
 
@@ -388,6 +418,7 @@ module.exports = {
     createUserByAdmin,
     deactivateUser,
     reactivateUser,
+    deleteUser,
     approveUser,
     updateUserRole,
     getMyProfile,

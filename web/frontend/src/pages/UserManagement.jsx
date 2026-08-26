@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useAuthContext } from "../hooks/useAuthContext"
-import { Shield, UserCheck, Eye, Power, Clock, CheckCircle } from "lucide-react"
+import { Shield, UserCheck, Eye, Power, Clock, CheckCircle, Trash2 } from "lucide-react"
 
 const USERS_PER_PAGE = 10
 
@@ -12,10 +12,12 @@ const UserManagement = () => {
     const [sortBy, setSortBy] = useState('alphabetical')
     const [currentPage, setCurrentPage] = useState(1)
     const [deactivateTarget, setDeactivateTarget] = useState(null)
+    const [deleteTarget, setDeleteTarget] = useState(null)
     const [pendingRoles, setPendingRoles] = useState({})
     const [successMessage, setSuccessMessage] = useState('')
     const isAdmin = user && user.role === 'admin'
     const selectedUser = users.find(u => u._id === deactivateTarget)
+    const deleteSelectedUser = users.find(u => u._id === deleteTarget)
     const [confirmChangesModal, setConfirmChangesModal] = useState(false)
     const [viewUser, setViewUser] = useState(null)
     const [createOpen, setCreateOpen] = useState(false)
@@ -101,6 +103,28 @@ const UserManagement = () => {
             ))
             setDeactivateTarget(null)
             setSuccessMessage('User deactivated successfully')
+            setTimeout(() => setSuccessMessage(''), 2000)
+        } else {
+            const error = await res.json()
+            setSuccessMessage('Error: ' + error.error)
+            setTimeout(() => setSuccessMessage(''), 2000)
+        }
+    }
+
+    // ================= DELETE USER =================
+    const confirmDelete = async () => {
+        const res = await fetch(`/api/user/${deleteTarget}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${user.token}`
+            }
+        })
+
+        if (res.ok) {
+            setUsers(users.filter(u => u._id !== deleteTarget))
+            setDeleteTarget(null)
+            setViewUser(null)
+            setSuccessMessage('User deleted successfully')
             setTimeout(() => setSuccessMessage(''), 2000)
         } else {
             const error = await res.json()
@@ -377,6 +401,16 @@ const UserManagement = () => {
                                                         <Power size={16} />
                                                     </button>
                                                 )}
+
+                                                {u._id !== user._id && (
+                                                    <button
+                                                        className="icon-btn delete-btn"
+                                                        onClick={() => setDeleteTarget(u._id)}
+                                                        title="Delete User"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                )}
                                             </div>
                                         </td>
                                     )}
@@ -533,6 +567,47 @@ const UserManagement = () => {
                         </div>
                     )}
 
+                    {/* DELETE MODAL */}
+                    {deleteTarget && (
+                        <div className="modal-overlay">
+                            <div className="modal-card">
+
+                            <div className="modal-header">
+                                <h3>Delete User</h3>
+                            </div>
+
+                            <div className="modal-body">
+                                <p>
+                                    Are you sure you want to delete{" "}
+                                    <strong>
+                                        {deleteSelectedUser?.firstName} {deleteSelectedUser?.lastName}
+                                    </strong>?
+                                </p>
+                                <p className="modal-warning">
+                                    This will permanently delete this account and cannot be undone.
+                                </p>
+                            </div>
+
+                            <div className="modal-actions">
+                                <button
+                                className="btn btn-secondary"
+                                onClick={() => setDeleteTarget(null)}
+                                >
+                                Cancel
+                                </button>
+
+                                <button
+                                className="btn btn-warning"
+                                onClick={confirmDelete}
+                                >
+                                Delete User
+                                </button>
+                            </div>
+
+                            </div>
+                        </div>
+                    )}
+
                     {/* VIEW USER MODAL with Reactivate button inside */}
                     {viewUser && (
                         <div className="modal-overlay">
@@ -603,6 +678,14 @@ const UserManagement = () => {
                                         onClick={() => confirmApprove(viewUser._id)}
                                     >
                                         Approve User
+                                    </button>
+                                )}
+                                {viewUser._id !== user._id && (
+                                    <button
+                                        className="btn btn-warning"
+                                        onClick={() => setDeleteTarget(viewUser._id)}
+                                    >
+                                        Delete User
                                     </button>
                                 )}
                                 <button
