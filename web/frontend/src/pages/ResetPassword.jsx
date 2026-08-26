@@ -3,7 +3,15 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useResetPassword } from '../hooks/useResetPassword'
 import { useForgotPassword } from '../hooks/useForgotPassword'
+import PasswordRequirements from '../components/PasswordRequirements'
 import bewairLogoWhite from '../assets/bewair_logo_white.png'
+
+const isStrongPassword = (password) =>
+  password.length >= 8 &&
+  /[A-Z]/.test(password) &&
+  /[a-z]/.test(password) &&
+  /\d/.test(password) &&
+  /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]/.test(password)
 
 const ResetPassword = () => {
   const location = useLocation()
@@ -34,6 +42,11 @@ const ResetPassword = () => {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLocalError(null)
+
+    if (!isStrongPassword(newPassword)) {
+      setLocalError('Password does not meet the requirements below.')
+      return
+    }
 
     if (newPassword !== confirmPassword) {
       setLocalError('Passwords do not match.')
@@ -110,6 +123,8 @@ const ResetPassword = () => {
                 </button>
               </div>
             </div>
+
+            {newPassword && <PasswordRequirements password={newPassword} />}
 
             <div className="auth-field">
               <label className="auth-label">Confirm New Password</label>

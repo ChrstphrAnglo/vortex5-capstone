@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_session.dart';
+import '../widgets/password_requirements.dart';
 import 'login_page.dart';
 
 class ResetPasswordPage extends StatefulWidget {
@@ -20,6 +21,12 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   bool _showConfirm = false;
   bool _submitting = false;
   bool _resending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _newPassCtrl.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -202,6 +209,10 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
                         ),
                       ),
                     ),
+                    if (_newPassCtrl.text.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      PasswordRequirements(password: _newPassCtrl.text),
+                    ],
                     const SizedBox(height: 14),
                     _label("Confirm New Password"),
                     TextField(

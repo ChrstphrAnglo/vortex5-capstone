@@ -2,7 +2,15 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useSignup } from '../hooks/useSignup'
+import PasswordRequirements from '../components/PasswordRequirements'
 import bewairLogoWhite from '../assets/bewair_logo_white.png'
+
+const isStrongPassword = (password) =>
+  password.length >= 8 &&
+  /[A-Z]/.test(password) &&
+  /[a-z]/.test(password) &&
+  /\d/.test(password) &&
+  /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]/.test(password)
 
 const Signup = () => {
   const [firstName, setFirstName] = useState('')
@@ -10,10 +18,18 @@ const Signup = () => {
   const [email,     setEmail]     = useState('')
   const [password,  setPassword]  = useState('')
   const [showPw,    setShowPw]    = useState(false)
+  const [localError, setLocalError] = useState(null)
   const { signup, error, isLoading } = useSignup()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setLocalError(null)
+
+    if (!isStrongPassword(password)) {
+      setLocalError('Password does not meet the requirements below.')
+      return
+    }
+
     await signup(email, password, firstName, lastName)
   }
 
@@ -98,7 +114,9 @@ const Signup = () => {
               </div>
             </div>
 
-            {error && <div className="auth-error">{error}</div>}
+            {password && <PasswordRequirements password={password} />}
+
+            {(localError || error) && <div className="auth-error">{localError || error}</div>}
 
             <button className="auth-submit" disabled={isLoading}>
               {isLoading ? 'Creating account…' : 'Create account'}

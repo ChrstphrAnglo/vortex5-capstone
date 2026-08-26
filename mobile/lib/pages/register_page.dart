@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_session.dart';
+import '../widgets/password_requirements.dart';
 import 'verify_code_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -32,6 +33,12 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _showPass = false;
   bool _showConfirm = false;
   bool _submitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _passCtrl.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -68,6 +75,12 @@ class _RegisterPageState extends State<RegisterPage> {
 
     if (pass != confirm) {
       _showMessage("Passwords do not match.");
+      return;
+    }
+
+    final passErr = UserSession.validateStrongPassword(pass);
+    if (passErr != null) {
+      _showMessage(passErr);
       return;
     }
 
@@ -251,6 +264,10 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                       ),
                     ),
+                    if (_passCtrl.text.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      PasswordRequirements(password: _passCtrl.text),
+                    ],
                     const SizedBox(height: 14),
                     _label("Confirm password"),
                     TextField(
