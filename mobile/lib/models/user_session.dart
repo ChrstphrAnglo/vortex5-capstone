@@ -215,6 +215,68 @@ class UserSession {
   }
 
   // ===========================
+  // FORGOT / RESET PASSWORD
+  // ===========================
+  static Future<String?> forgotPassword(String email) async {
+    final uri = Uri.parse("$baseUrl$userBasePath/forgot-password");
+
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"email": email.trim()}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return null;
+      }
+
+      return data["error"]?.toString() ?? "Failed to send reset code.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  static Future<String?> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    final passErr = validateStrongPassword(newPassword);
+    if (passErr != null) return passErr;
+
+    final uri = Uri.parse("$baseUrl$userBasePath/reset-password");
+
+    try {
+      final res = await http
+          .post(
+            uri,
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({
+              "email": email.trim(),
+              "code": code.trim(),
+              "newPassword": newPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        return null;
+      }
+
+      return data["error"]?.toString() ?? "Failed to reset password.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  // ===========================
   // PASSWORD VALIDATION
   // ===========================
   static String? validateStrongPassword(String password) {

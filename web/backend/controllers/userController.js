@@ -1,10 +1,12 @@
 const User = require('../models/userModel')
 const EmailVerification = require('../models/emailVerificationModel')
+const PasswordReset = require('../models/passwordResetModel')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
 const validator = require('validator')
 const logAudit = require('../utils/logAudit');
 const sendVerificationEmail = require('../utils/sendVerificationEmail')
+const sendPasswordResetEmail = require('../utils/sendPasswordResetEmail')
 
 const createToken = (_id) => {
    return jwt.sign({_id}, process.env.SECRET, {expiresIn: '3d'})
@@ -40,6 +42,85 @@ const sendSignupCode = async (req, res) => {
         res.status(200).json({ message: 'Verification code sent' })
     } catch (error) {
         res.status(500).json({ error: 'Failed to send verification code' })
+    }
+}
+
+// POST /api/user/forgot-password — email a 6-digit password reset code
+const forgotPassword = async (req, res) => {
+    const { email } = req.body
+
+    if (!email || !validator.isEmail(email)) {
+        return res.status(400).json({ error: 'A valid email is required' })
+    }
+
+    try {
+        const existingUser = await User.findOne({ email })
+        if (!existingUser) {
+            return res.status(400).json({ error: 'No account found with that email' })
+        }
+
+        const code = generateCode()
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000)
+
+        await PasswordReset.findOneAndUpdate(
+            { email },
+            { code, expiresAt, attempts: 0 },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        )
+
+        await sendPasswordResetEmail(email, code)
+
+        res.status(200).json({ message: 'Password reset code sent' })
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to send password reset code' })
+    }
+}
+
+// POST /api/user/reset-password — verify the code and set a new password
+const resetPassword = async (req, res) => {
+    const { email, code, newPassword } = req.body
+
+    if (!email || !code || !newPassword) {
+        return res.status(400).json({ error: 'Email, code, and new password are required' })
+    }
+    if (!validator.isStrongPassword(newPassword)) {
+        return res.status(400).json({ error: 'New password is not strong enough (need 8+ chars, mixed case, number, symbol)' })
+    }
+
+    try {
+        const reset = await PasswordReset.findOne({ email })
+        if (!reset || reset.expiresAt < new Date()) {
+            return res.status(400).json({ error: 'Code expired or not found. Request a new one.' })
+        }
+        if (reset.attempts >= 5) {
+            return res.status(400).json({ error: 'Too many incorrect attempts. Request a new code.' })
+        }
+        if (reset.code !== code) {
+            reset.attempts += 1
+            await reset.save()
+            return res.status(400).json({ error: 'Invalid code.' })
+        }
+
+        const user = await User.findOne({ email })
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' })
+        }
+
+        const salt = await bcrypt.genSalt(10)
+        user.password = await bcrypt.hash(newPassword, salt)
+        await user.save()
+
+        await PasswordReset.deleteOne({ email })
+
+        await logAudit({
+            module: 'User',
+            action: `User ${user.firstName} ${user.lastName} (${user.email}) reset their password`,
+            user: user.email
+        })
+
+        res.status(200).json({ message: 'Password reset successfully' })
+    } catch (error) {
+        res.status(400).json({ error: error.message })
     }
 }
 
@@ -447,6 +528,8 @@ const deleteMyAccount = async (req, res) => {
 module.exports = {
     signupUser,
     sendSignupCode,
+    forgotPassword,
+    resetPassword,
     loginUser,
     getUsers,
     createUserByAdmin,

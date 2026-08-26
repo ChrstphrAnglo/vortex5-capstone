@@ -72,6 +72,10 @@ const Login = () => {
               </div>
             </div>
 
+            <p className="auth-switch" style={{ marginTop: '-8px', textAlign: 'right' }}>
+              <Link to="/forgot-password">Forgot password?</Link>
+            </p>
+
             {error && <div className="auth-error">{error}</div>}
 
             <button className="auth-submit" disabled={isLoading}>

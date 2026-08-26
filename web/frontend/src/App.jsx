@@ -5,6 +5,8 @@ import { useAuthContext } from './hooks/useAuthContext';
 import Home from './pages/Home.jsx'
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import Configuration from './pages/Configuration.jsx';
 import Analytics from './pages/Analytics.jsx';
 import Auditlog from './pages/Auditlog.jsx'
@@ -27,7 +29,7 @@ function AppRoutes() {
   const location = useLocation()
   
   // Define public pages that should NOT have Navbar and Header
-  const publicPages = ['/login', '/signup']
+  const publicPages = ['/login', '/signup', '/forgot-password', '/reset-password']
   const isPublicPage = publicPages.includes(location.pathname)
 
   return (
@@ -116,9 +118,19 @@ function AppRoutes() {
               element={!user ? <Login /> : <Navigate to="/" />}
             />
             
-            <Route 
+            <Route
               path="/signup"
               element={!user ? <Signup /> : <Navigate to="/" />}
+            />
+
+            <Route
+              path="/forgot-password"
+              element={!user ? <ForgotPassword /> : <Navigate to="/" />}
+            />
+
+            <Route
+              path="/reset-password"
+              element={!user ? <ResetPassword /> : <Navigate to="/" />}
             />
           </Routes>
         </div>

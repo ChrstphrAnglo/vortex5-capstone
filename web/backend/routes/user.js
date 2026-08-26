@@ -3,6 +3,8 @@ const { requireAuth, requireAdmin } = require('../middleware/requireAuth')
 const {
     signupUser,
     sendSignupCode,
+    forgotPassword,
+    resetPassword,
     loginUser,
     getUsers,
     createUserByAdmin,
@@ -23,6 +25,8 @@ const router = express.Router()
 router.post('/login', loginUser)
 router.post('/signup/send-code', sendSignupCode)
 router.post('/signup', signupUser)
+router.post('/forgot-password', forgotPassword)
+router.post('/reset-password', resetPassword)
 
 // Self-service routes (any authenticated user)
 router.get('/me',            requireAuth, getMyProfile)
