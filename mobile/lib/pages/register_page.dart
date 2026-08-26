@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_session.dart';
-import 'login_page.dart';
+import 'verify_code_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -24,7 +24,6 @@ class _RegisterPageState extends State<RegisterPage> {
   final _lastCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _teacherIdCtrl = TextEditingController();
-  final _otpCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
 
@@ -32,9 +31,7 @@ class _RegisterPageState extends State<RegisterPage> {
   String? _selectedStaffType;
   bool _showPass = false;
   bool _showConfirm = false;
-  bool _loading = false;
-  bool _sendingCode = false;
-  bool _codeSent = false;
+  bool _submitting = false;
 
   @override
   void dispose() {
@@ -42,41 +39,16 @@ class _RegisterPageState extends State<RegisterPage> {
     _lastCtrl.dispose();
     _emailCtrl.dispose();
     _teacherIdCtrl.dispose();
-    _otpCtrl.dispose();
     _passCtrl.dispose();
     _confirmCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _sendCode() async {
-    final email = _emailCtrl.text.trim();
-    if (email.isEmpty) {
-      _showMessage("Enter your email first.");
-      return;
-    }
-
-    setState(() => _sendingCode = true);
-
-    final err = await UserSession.sendSignupCode(email);
-
-    if (!mounted) return;
-    setState(() => _sendingCode = false);
-
-    if (err != null) {
-      _showMessage(err);
-      return;
-    }
-
-    setState(() => _codeSent = true);
-    _showMessage('Verification code sent to $email');
-  }
-
-  Future<void> _createAccount() async {
+  Future<void> _continue() async {
     final first = _firstCtrl.text.trim();
     final last = _lastCtrl.text.trim();
     final email = _emailCtrl.text.trim();
     final teacherId = _teacherIdCtrl.text.trim();
-    final code = _otpCtrl.text.trim();
     final pass = _passCtrl.text.trim();
     final confirm = _confirmCtrl.text.trim();
     final department = _selectedDepartment ?? '';
@@ -88,7 +60,6 @@ class _RegisterPageState extends State<RegisterPage> {
         teacherId.isEmpty ||
         department.isEmpty ||
         staffType.isEmpty ||
-        code.isEmpty ||
         pass.isEmpty ||
         confirm.isEmpty) {
       _showMessage("Please fill out all fields.");
@@ -100,35 +71,32 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    setState(() => _loading = true);
+    setState(() => _submitting = true);
 
-    final err = await UserSession.register(
-      firstName: first,
-      lastName: last,
-      email: email,
-      password: pass,
-      teacherId: teacherId,
-      department: department,
-      staffType: staffType,
-      code: code,
-    );
+    final err = await UserSession.sendSignupCode(email);
 
     if (!mounted) return;
 
-    setState(() => _loading = false);
+    setState(() => _submitting = false);
 
     if (err != null) {
       _showMessage(err);
       return;
     }
 
-    _showMessage(
-      "Account created. Please wait for admin approval before logging in.",
-    );
-
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => LoginPage(prefillEmail: email)),
+      MaterialPageRoute(
+        builder: (_) => VerifyCodePage(
+          firstName: first,
+          lastName: last,
+          email: email,
+          password: pass,
+          teacherId: teacherId,
+          department: department,
+          staffType: staffType,
+        ),
+      ),
     );
   }
 
@@ -268,54 +236,6 @@ class _RegisterPageState extends State<RegisterPage> {
                       },
                     ),
                     const SizedBox(height: 14),
-                    _label("Verification Code"),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _otpCtrl,
-                            keyboardType: TextInputType.number,
-                            decoration: _fieldDeco(
-                              hint: 'Enter code sent to your email',
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton(
-                          onPressed: _sendingCode ? null : _sendCode,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFE9F5FF),
-                            foregroundColor: const Color(0xFF1E88FF),
-                            elevation: 0,
-                            minimumSize: const Size(110, 54),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: _sendingCode
-                              ? const SizedBox(
-                                  height: 18,
-                                  width: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Color(0xFF1E88FF),
-                                  ),
-                                )
-                              : const Text('Send Code'),
-                        ),
-                      ],
-                    ),
-                    if (_codeSent) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Verification code sent to your email.',
-                        style: TextStyle(
-                          color: Color(0xFF0F766E),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 14),
                     _label("Password"),
                     TextField(
                       controller: _passCtrl,
@@ -353,7 +273,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     SizedBox(
                       height: 54,
                       child: ElevatedButton(
-                        onPressed: _loading ? null : _createAccount,
+                        onPressed: _submitting ? null : _continue,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1E88FF),
                           foregroundColor: Colors.white,
@@ -362,7 +282,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        child: _loading
+                        child: _submitting
                             ? const SizedBox(
                                 height: 20,
                                 width: 20,
@@ -372,7 +292,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                 ),
                               )
                             : const Text(
-                                "Create account",
+                                "Continue",
                                 style: TextStyle(fontWeight: FontWeight.w700),
                               ),
                       ),
