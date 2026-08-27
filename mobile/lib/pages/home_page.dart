@@ -9,12 +9,10 @@ import 'package:vortex5_application_2/pages/share_device_page.dart';
 
 class HomePage extends StatefulWidget {
   final AppState appState;
-  final VoidCallback onOpenAlerts;
 
   const HomePage({
     super.key,
     required this.appState,
-    required this.onOpenAlerts,
   });
 
   @override
@@ -249,42 +247,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                 )
               : const Icon(Icons.refresh, color: Colors.white),
-        ),
-        // Notifications with unread badge
-        Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            IconButton(
-              onPressed: () {
-                widget.appState.markAlertsRead();
-                widget.onOpenAlerts();
-              },
-              icon: const Icon(Icons.notifications_none_rounded,
-                  color: Colors.white),
-            ),
-            if (widget.appState.unreadAlertCount > 0)
-              Positioned(
-                right: 6,
-                top: 6,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${widget.appState.unreadAlertCount}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ),
-          ],
         ),
         // Overflow menu (admin device actions + list of devices)
         if (widget.appState.isAdmin)

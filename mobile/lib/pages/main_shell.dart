@@ -45,10 +45,7 @@ class _MainShellState extends State<MainShell> {
     }
 
     final pages = [
-      HomePage(
-        appState: _appState,
-        onOpenAlerts: () => setState(() => _currentIndex = 1),
-      ),
+      HomePage(appState: _appState),
       AlertPage(appState: _appState),
       DevicePage(appState: _appState),
       BulletinBoardPage(appState: _appState),
@@ -64,7 +61,10 @@ class _MainShellState extends State<MainShell> {
         unselectedItemColor: const Color(0xFF6B7280),
         selectedFontSize: 11,
         unselectedFontSize: 11,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: (index) {
+          if (index == 1) _appState.markAlertsRead();
+          setState(() => _currentIndex = index);
+        },
         items: const [
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
