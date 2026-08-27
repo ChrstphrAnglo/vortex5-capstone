@@ -1,6 +1,5 @@
 import 'dart:convert';
-import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show File;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -140,25 +139,87 @@ class UserSession {
     required String email,
     required String department,
     required String staffType,
-    required String pictureUrl,
   }) async {
-    if (current == null) return "Not logged in.";
+    final u = current;
+    if (u == null) return "Not logged in.";
     if (firstName.trim().isEmpty ||
         lastName.trim().isEmpty ||
         email.trim().isEmpty) {
       return "Name and email are required.";
     }
 
-    current = current!.copyWith(
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim(),
-      department: department.trim(),
-      staffType: staffType.trim(),
-      pictureUrl: pictureUrl.trim(),
-    );
-    await _save(current!);
-    return null;
+    final uri = Uri.parse("$baseUrl$userBasePath/me");
+
+    try {
+      final res = await http
+          .patch(
+            uri,
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer ${u.token}",
+            },
+            body: jsonEncode({
+              "firstName": firstName.trim(),
+              "lastName": lastName.trim(),
+              "email": email.trim(),
+              "department": department.trim(),
+              "staffType": staffType.trim(),
+            }),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        // The response is the updated user document — it has no "token"
+        // field, so merge onto the existing session rather than replacing
+        // it wholesale (which would wipe out the token).
+        current = u.copyWith(
+          firstName: data['firstName']?.toString(),
+          lastName: data['lastName']?.toString(),
+          email: data['email']?.toString(),
+          department: data['department']?.toString(),
+          staffType: data['staffType']?.toString(),
+        );
+        await _save(current!);
+        return null;
+      }
+
+      return data["error"]?.toString() ?? "Failed to update profile.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  // ===========================
+  // UPLOAD PROFILE PICTURE
+  // ===========================
+  static Future<String?> uploadProfilePicture(File imageFile) async {
+    final u = current;
+    if (u == null) return "Not logged in.";
+
+    final uri = Uri.parse("$baseUrl$userBasePath/me/picture");
+
+    try {
+      final request = http.MultipartRequest("PATCH", uri)
+        ..headers["Authorization"] = "Bearer ${u.token}"
+        ..files.add(await http.MultipartFile.fromPath("picture", imageFile.path));
+
+      final streamedRes = await request.send().timeout(const Duration(seconds: 30));
+      final res = await http.Response.fromStream(streamedRes);
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        current = u.copyWith(pictureUrl: data['pictureUrl']?.toString());
+        await _save(current!);
+        return null;
+      }
+
+      return data["error"]?.toString() ?? "Failed to upload picture.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
   }
 
   static Future<String?> changePassword({

@@ -1,5 +1,6 @@
 const express = require('express')
 const { requireAuth, requireAdmin } = require('../middleware/requireAuth')
+const uploadImage = require('../middleware/uploadImage')
 const {
     signupUser,
     sendSignupCode,
@@ -15,6 +16,7 @@ const {
     updateUserRole,
     getMyProfile,
     updateMyProfile,
+    updateMyPicture,
     changeMyPassword,
     deleteMyAccount,
 } = require('../controllers/userController')
@@ -31,6 +33,7 @@ router.post('/reset-password', resetPassword)
 // Self-service routes (any authenticated user)
 router.get('/me',            requireAuth, getMyProfile)
 router.patch('/me',          requireAuth, updateMyProfile)
+router.patch('/me/picture',  requireAuth, uploadImage.single('picture'), updateMyPicture)
 router.post('/me/password',  requireAuth, changeMyPassword)
 router.delete('/me',         requireAuth, deleteMyAccount)
 

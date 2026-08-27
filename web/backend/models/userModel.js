@@ -38,6 +38,10 @@ const userSchema = new Schema ({
         type: String,
         default: ''
     },
+    pictureUrl: {
+        type: String,
+        default: ''
+    },
     status: {
         type: String,
         enum: ['pending', 'active', 'deactivated'],

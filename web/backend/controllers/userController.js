@@ -4,6 +4,8 @@ const PasswordReset = require('../models/passwordResetModel')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
 const validator = require('validator')
+const fs = require('fs')
+const path = require('path')
 const logAudit = require('../utils/logAudit');
 const sendVerificationEmail = require('../utils/sendVerificationEmail')
 const sendPasswordResetEmail = require('../utils/sendPasswordResetEmail')
@@ -415,7 +417,7 @@ const getMyProfile = async (req, res) => {
 
 // PATCH /api/user/me — update current user's firstName, lastName, email
 const updateMyProfile = async (req, res) => {
-    const { firstName, lastName, email } = req.body
+    const { firstName, lastName, email, department, staffType } = req.body
 
     if (firstName !== undefined && !firstName.trim()) {
         return res.status(400).json({ error: 'First name cannot be empty' })
@@ -437,9 +439,11 @@ const updateMyProfile = async (req, res) => {
         }
 
         const updates = {}
-        if (firstName !== undefined) updates.firstName = firstName.trim()
-        if (lastName  !== undefined) updates.lastName  = lastName.trim()
-        if (email     !== undefined) updates.email     = email.trim()
+        if (firstName  !== undefined) updates.firstName  = firstName.trim()
+        if (lastName   !== undefined) updates.lastName   = lastName.trim()
+        if (email      !== undefined) updates.email      = email.trim()
+        if (department !== undefined) updates.department = department.trim()
+        if (staffType  !== undefined) updates.staffType  = staffType.trim()
 
         const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true }).select('-password')
         if (!user) return res.status(404).json({ error: 'User not found' })
@@ -451,6 +455,40 @@ const updateMyProfile = async (req, res) => {
         })
 
         res.status(200).json(user)
+    } catch (error) {
+        res.status(400).json({ error: error.message })
+    }
+}
+
+// PATCH /api/user/me/picture — upload/replace current user's profile picture
+const updateMyPicture = async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'No image file uploaded' })
+    }
+
+    try {
+        const user = await User.findById(req.user._id)
+        if (!user) return res.status(404).json({ error: 'User not found' })
+
+        // Delete the previous picture from disk, if any, to avoid orphaned files
+        if (user.pictureUrl) {
+            const oldPath = path.join(__dirname, '..', user.pictureUrl)
+            if (fs.existsSync(oldPath)) {
+                fs.unlinkSync(oldPath)
+            }
+        }
+
+        user.pictureUrl = `/uploads/${req.file.filename}`
+        await user.save()
+
+        logAudit({
+            module: 'User',
+            action: `${user.email} updated their profile picture`,
+            user: user.email,
+        })
+
+        const result = await User.findById(user._id).select('-password')
+        res.status(200).json(result)
     } catch (error) {
         res.status(400).json({ error: error.message })
     }
@@ -540,6 +578,7 @@ module.exports = {
     updateUserRole,
     getMyProfile,
     updateMyProfile,
+    updateMyPicture,
     changeMyPassword,
     deleteMyAccount,
 }

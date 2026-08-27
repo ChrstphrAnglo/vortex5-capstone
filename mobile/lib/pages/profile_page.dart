@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/user_session.dart';
 import 'login_page.dart';
 
@@ -13,6 +16,69 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   static const _blue = Color(0xFF1E5BFF);
 
+  bool _uploadingPicture = false;
+
+  Future<void> _changePicture() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Text(
+                'Change Profile Photo',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined, color: _blue),
+              title: const Text('Take Photo'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: _blue),
+              title: const Text('Choose from Gallery'),
+              onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picked = await ImagePicker().pickImage(
+      source: source,
+      maxWidth: 800,
+      imageQuality: 80,
+    );
+
+    if (picked == null) return;
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    setState(() => _uploadingPicture = true);
+
+    final err = await UserSession.uploadProfilePicture(File(picked.path));
+
+    if (!mounted) return;
+    setState(() => _uploadingPicture = false);
+
+    if (err != null) {
+      messenger.showSnackBar(SnackBar(content: Text(err)));
+      return;
+    }
+
+    setState(() {});
+  }
+
   Future<void> _editProfile() async {
     final user = UserSession.current;
     if (user == null) return;
@@ -20,7 +86,6 @@ class _ProfilePageState extends State<ProfilePage> {
     final firstCtrl = TextEditingController(text: user.firstName);
     final lastCtrl = TextEditingController(text: user.lastName);
     final emailCtrl = TextEditingController(text: user.email);
-    final pictureCtrl = TextEditingController(text: user.pictureUrl);
     String department = user.department;
     String staffType = user.staffType;
 
@@ -39,8 +104,6 @@ class _ProfilePageState extends State<ProfilePage> {
                   _field(lastCtrl, 'Last name'),
                   const SizedBox(height: 12),
                   _field(emailCtrl, 'Email'),
-                  const SizedBox(height: 12),
-                  _field(pictureCtrl, 'Picture URL'),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
                     value: department.isEmpty ? null : department,
@@ -83,7 +146,6 @@ class _ProfilePageState extends State<ProfilePage> {
                     email: emailCtrl.text,
                     department: department,
                     staffType: staffType,
-                    pictureUrl: pictureCtrl.text,
                   );
                   if (!mounted) return;
                   if (message != null) {
@@ -323,9 +385,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
           const SizedBox(height: 20),
 
-          // ── Account Settings ──────────────────────────────────────────
+          // ── Account section ─────────────────────────────────────────
           const Text(
-            'Account Settings',
+            'Account',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 10),
@@ -340,7 +402,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 _settingsTile(
                   icon: Icons.person_outline_rounded,
                   label: 'Edit Profile',
-                  subtitle: 'Update your name, email and picture',
+                  subtitle: 'Update your name, email, and role details',
                   onTap: _editProfile,
                 ),
                 const Divider(height: 1, indent: 56),
@@ -350,7 +412,30 @@ class _ProfilePageState extends State<ProfilePage> {
                   subtitle: 'Update your login password',
                   onTap: _changePassword,
                 ),
-                const Divider(height: 1, indent: 56),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+
+          // ── Danger Zone ──────────────────────────────────────────────
+          const Text(
+            'Danger Zone',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Colors.red,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.red.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.red.withValues(alpha: 0.25)),
+            ),
+            child: Column(
+              children: [
                 _settingsTile(
                   icon: Icons.logout_rounded,
                   label: 'Sign Out',
@@ -358,7 +443,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   onTap: _signOut,
                   danger: true,
                 ),
-                const Divider(height: 1, indent: 56),
+                Divider(height: 1, indent: 56, color: Colors.red.withValues(alpha: 0.15)),
                 _settingsTile(
                   icon: Icons.delete_forever_rounded,
                   label: 'Delete Account',
@@ -378,24 +463,70 @@ class _ProfilePageState extends State<ProfilePage> {
 
   Widget _avatar(String? pictureUrl) {
     final initials = _initials();
-    if (pictureUrl != null && pictureUrl.trim().isNotEmpty) {
-      return CircleAvatar(
-        radius: 34,
-        backgroundColor: const Color(0xFF6988FF),
-        backgroundImage: NetworkImage(pictureUrl),
-        onBackgroundImageError: (_, __) {},
-        child: const SizedBox.shrink(),
-      );
-    }
-    return CircleAvatar(
-      radius: 34,
-      backgroundColor: const Color(0xFF6988FF),
-      child: Text(
-        initials,
-        style: const TextStyle(
-            color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
+    final resolvedUrl = _resolvePictureUrl(pictureUrl);
+
+    return GestureDetector(
+      onTap: _changePicture,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          CircleAvatar(
+            radius: 34,
+            backgroundColor: const Color(0xFF6988FF),
+            backgroundImage:
+                resolvedUrl != null ? NetworkImage(resolvedUrl) : null,
+            onBackgroundImageError:
+                resolvedUrl != null ? (_, _) {} : null,
+            child: resolvedUrl == null
+                ? Text(
+                    initials,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18),
+                  )
+                : null,
+          ),
+          if (_uploadingPicture)
+            Positioned.fill(
+              child: CircleAvatar(
+                radius: 34,
+                backgroundColor: Colors.black.withValues(alpha: 0.45),
+                child: const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            right: -2,
+            bottom: -2,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF355CFF), width: 1.5),
+              ),
+              child: const Icon(Icons.camera_alt_rounded,
+                  size: 13, color: Color(0xFF355CFF)),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  /// Backend stores picture paths as `/uploads/<filename>` (relative) — this
+  /// prefixes them with the API base URL so NetworkImage can load them.
+  String? _resolvePictureUrl(String? pictureUrl) {
+    if (pictureUrl == null || pictureUrl.trim().isEmpty) return null;
+    if (pictureUrl.startsWith('http')) return pictureUrl;
+    return '${UserSession.baseUrl}$pictureUrl';
   }
 
   Widget _chip(String label) {
