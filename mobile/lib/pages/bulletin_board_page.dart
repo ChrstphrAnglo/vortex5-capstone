@@ -5,6 +5,26 @@ import 'package:http/http.dart' as http;
 import 'package:vortex5_application_2/app_state.dart';
 import 'package:vortex5_application_2/models/bulletin_post.dart';
 import 'package:vortex5_application_2/models/user_session.dart';
+import 'create_announcement_page.dart';
+
+/// Category → color lookup. Categories are real, meaningful data (not
+/// decoration) so each gets a deliberate color, making the feed scannable
+/// at a glance. Falls back to slate for any free-text category the backend
+/// doesn't constrain to this list.
+Color categoryColor(String category) {
+  switch (category) {
+    case 'Events':
+      return const Color(0xFFF59E0B); // amber
+    case 'System Updates':
+      return const Color(0xFF1E5BFF); // brand blue
+    case 'Achievements':
+      return const Color(0xFF10B981); // emerald
+    case 'Reminders':
+      return const Color(0xFFEF4444); // coral/red
+    default:
+      return const Color(0xFF64748B); // slate
+  }
+}
 
 class BulletinBoardPage extends StatefulWidget {
   const BulletinBoardPage({super.key, required this.appState});
@@ -27,6 +47,7 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
 
   List<BulletinPost> _posts = [];
   String _selectedCategory = 'All';
+  String _search = '';
   bool _loading = true;
   String? _error;
 
@@ -70,130 +91,61 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
     } catch (_) {}
   }
 
-  Future<void> _createPost() async {
-    final titleCtrl = TextEditingController();
-    final messageCtrl = TextEditingController();
-    String category = 'Events';
-    bool pinned = false;
+  Future<void> _togglePin(BulletinPost post) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final nextPinned = !post.pinned;
+    try {
+      final uri = Uri.parse('${UserSession.baseUrl}/api/announcements/${post.id}');
+      final res = await http
+          .put(uri, headers: _headers(), body: jsonEncode({'pinned': nextPinned}))
+          .timeout(const Duration(seconds: 10));
 
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setModalState) {
-          return AlertDialog(
-            title: const Text('Create Announcement'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: titleCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Title',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: messageCtrl,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Message',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: category,
-                    decoration: const InputDecoration(
-                      labelText: 'Category',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _categories
-                        .where((c) => c != 'All')
-                        .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                        .toList(),
-                    onChanged: (value) =>
-                        setModalState(() => category = value ?? 'Events'),
-                  ),
-                  const SizedBox(height: 8),
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Pin Announcement'),
-                    value: pinned,
-                    onChanged: (value) =>
-                        setModalState(() => pinned = value ?? false),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () async {
-                  if (titleCtrl.text.trim().isEmpty ||
-                      messageCtrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Title and message are required.')),
-                    );
-                    return;
-                  }
-                  final messenger = ScaffoldMessenger.of(context);
-                  final navigator = Navigator.of(dialogContext);
-                  try {
-                    final now = DateTime.now();
-                    final uri = Uri.parse(
-                        '${UserSession.baseUrl}/api/announcements');
-                    final res = await http.post(
-                      uri,
-                      headers: _headers(),
-                      body: jsonEncode({
-                        'title': titleCtrl.text.trim(),
-                        'description': messageCtrl.text.trim(),
-                        'category': category,
-                        'pinned': pinned,
-                        'date':
-                            '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
-                        'time':
-                            '${now.hour}:${now.minute.toString().padLeft(2, '0')}',
-                      }),
-                    );
-                    if (!mounted) return;
-                    navigator.pop();
-                    if (res.statusCode == 200) {
-                      final created = BulletinPost.fromJson(
-                          jsonDecode(res.body) as Map<String, dynamic>);
-                      setState(() => _posts.insert(0, created));
-                      messenger.showSnackBar(
-                          const SnackBar(content: Text('Announcement saved.')));
-                    } else {
-                      messenger.showSnackBar(
-                          SnackBar(content: Text('Failed: ${res.statusCode}')));
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      Navigator.of(dialogContext).pop();
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Error: $e')));
-                    }
-                  }
-                },
-                child: const Text('Post'),
-              ),
-            ],
-          );
-        },
-      ),
+      if (!mounted) return;
+
+      if (res.statusCode == 200) {
+        final updated = BulletinPost.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+        setState(() {
+          final index = _posts.indexWhere((p) => p.id == post.id);
+          if (index != -1) _posts[index] = updated;
+        });
+        messenger.showSnackBar(
+          SnackBar(content: Text(nextPinned ? 'Announcement pinned.' : 'Announcement unpinned.')),
+        );
+      } else {
+        messenger.showSnackBar(const SnackBar(content: Text('Failed to update pin status.')));
+      }
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(const SnackBar(content: Text('Network error updating pin status.')));
+    }
+  }
+
+  Future<void> _openCreatePage() async {
+    final created = await Navigator.push<BulletinPost>(
+      context,
+      MaterialPageRoute(builder: (_) => const CreateAnnouncementPage()),
+    );
+    if (created == null || !mounted) return;
+    setState(() => _posts.insert(0, created));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Announcement saved.')),
     );
   }
 
   List<BulletinPost> get _filteredPosts {
-    if (_selectedCategory == 'All') return _posts;
-    return _posts.where((p) => p.category == _selectedCategory).toList();
+    var result = _selectedCategory == 'All'
+        ? _posts
+        : _posts.where((p) => p.category == _selectedCategory).toList();
+
+    if (_search.trim().isNotEmpty) {
+      final q = _search.trim().toLowerCase();
+      result = result
+          .where((p) =>
+              p.title.toLowerCase().contains(q) ||
+              p.message.toLowerCase().contains(q))
+          .toList();
+    }
+    return result;
   }
 
   @override
@@ -231,22 +183,22 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
         actions: [
           if (isAdmin)
             IconButton(
-              onPressed: _createPost,
+              onPressed: _openCreatePage,
               icon: const Icon(Icons.add_comment_outlined, color: Colors.white),
             ),
         ],
       ),
       body: _loading
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
                   Text(
                     'Loading announcements…\nServer may take a moment to wake up.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                    style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
                   ),
                 ],
               ),
@@ -259,41 +211,42 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
                     physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.all(12),
                     children: [
-                      _CategoryCard(
-                        selected: _selectedCategory,
-                        onSelected: (value) =>
-                            setState(() => _selectedCategory = value),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(child: _searchField()),
+                          const SizedBox(width: 10),
+                          _categoryDropdown(),
+                        ],
                       ),
                       const SizedBox(height: 14),
                       if (pinnedPosts.isNotEmpty) ...[
-                        const Text(
+                        Text(
                           'Pinned Announcements',
-                          style: TextStyle(
-                              fontSize: 19, fontWeight: FontWeight.w700),
+                          style: GoogleFonts.poppins(fontSize: 19, fontWeight: FontWeight.w700),
                         ),
                         const SizedBox(height: 10),
                         ...pinnedPosts.map((p) => _announcementCard(p, isAdmin)),
                         const SizedBox(height: 14),
                       ],
-                      const Text(
+                      Text(
                         'Announcements',
-                        style: TextStyle(
-                            fontSize: 19, fontWeight: FontWeight.w700),
+                        style: GoogleFonts.poppins(fontSize: 19, fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 10),
                       if (regularPosts.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 40),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
                           child: Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.campaign_outlined,
+                                const Icon(Icons.campaign_outlined,
                                     size: 48, color: Colors.black26),
-                                SizedBox(height: 12),
+                                const SizedBox(height: 12),
                                 Text(
                                   'No announcements yet.',
-                                  style: TextStyle(color: Colors.black45),
+                                  style: GoogleFonts.inter(color: Colors.black45),
                                 ),
                               ],
                             ),
@@ -306,14 +259,99 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
     );
   }
 
+  Widget _searchField() {
+    return TextField(
+      onChanged: (v) => setState(() => _search = v),
+      style: GoogleFonts.inter(fontSize: 14),
+      decoration: InputDecoration(
+        hintText: 'Search announcements',
+        hintStyle: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF94A3B8)),
+        prefixIcon: const Icon(Icons.search, size: 20, color: Color(0xFF64748B)),
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _blue, width: 1.4),
+        ),
+      ),
+    );
+  }
+
+  Widget _categoryDropdown() {
+    return Container(
+      height: 46,
+      width: 150,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _selectedCategory,
+          isExpanded: true,
+          isDense: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+              size: 18, color: Color(0xFF64748B)),
+          borderRadius: BorderRadius.circular(14),
+          onChanged: (value) {
+            if (value != null) setState(() => _selectedCategory = value);
+          },
+          items: _categories.map((category) {
+            final color =
+                category == 'All' ? const Color(0xFF334155) : categoryColor(category);
+            return DropdownMenuItem(
+              value: category,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      category,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                          fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A)),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   Widget _announcementCard(BulletinPost post, bool isAdmin) {
+    final color = categoryColor(post.category);
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF8BB5FF)),
+        border: Border(
+          top: const BorderSide(color: Color(0xFFE2E8F0)),
+          right: const BorderSide(color: Color(0xFFE2E8F0)),
+          bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+          left: BorderSide(color: color, width: 4),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -324,38 +362,49 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE8DDFB),
+                  color: color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(post.category,
-                    style: const TextStyle(fontSize: 12)),
+                    style: GoogleFonts.inter(
+                        fontSize: 12, fontWeight: FontWeight.w600, color: color)),
               ),
-              if (post.pinned) ...[
+              if (post.pinned && !isAdmin) ...[
                 const SizedBox(width: 6),
                 const Icon(Icons.push_pin_rounded,
                     size: 14, color: Color(0xFF1E5BFF)),
               ],
               const Spacer(),
-              if (isAdmin)
+              if (isAdmin) ...[
+                GestureDetector(
+                  onTap: () => _togglePin(post),
+                  child: Icon(
+                    post.pinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                    size: 18,
+                    color: post.pinned ? _blue : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                const SizedBox(width: 14),
                 GestureDetector(
                   onTap: () => _confirmDelete(post),
                   child: const Icon(Icons.delete_outline_rounded,
                       size: 18, color: Color(0xFFCBD5E1)),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
           Text(
             post.title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 6),
           Text(post.message,
-              style: const TextStyle(color: Color(0xFF475569), height: 1.4)),
+              style: GoogleFonts.inter(color: const Color(0xFF475569), height: 1.4)),
           const SizedBox(height: 10),
           Text(
             _timeAgo(post.createdAt),
-            style: const TextStyle(
+            style: GoogleFonts.inter(
               color: _blue,
               fontWeight: FontWeight.w700,
               fontSize: 12,
@@ -400,16 +449,16 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
             const Icon(Icons.cloud_off_rounded,
                 size: 48, color: Colors.black26),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Could not load announcements',
-              style: TextStyle(
-                  fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+              style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
             ),
             const SizedBox(height: 6),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
+              style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 12),
             ),
             const SizedBox(height: 16),
             TextButton.icon(
@@ -426,48 +475,22 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
   String _timeAgo(DateTime value) {
     final diff = DateTime.now().difference(value);
     if (diff.inMinutes < 1) return 'just now';
-    if (diff.inHours < 1) return '${diff.inMinutes} min ago';
-    if (diff.inDays < 1) return '${diff.inHours} hr ago';
-    return '${diff.inDays} day ago';
-  }
-}
-
-class _CategoryCard extends StatelessWidget {
-  const _CategoryCard({required this.selected, required this.onSelected});
-
-  final String selected;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    const categories = [
-      'All',
-      'Events',
-      'System Updates',
-      'Achievements',
-      'Reminders',
+    if (diff.inHours < 1) {
+      final m = diff.inMinutes;
+      return '$m min ago';
+    }
+    if (diff.inDays < 1) {
+      final h = diff.inHours;
+      return '$h hr${h == 1 ? '' : 's'} ago';
+    }
+    if (diff.inDays < 7) {
+      final d = diff.inDays;
+      return '$d day${d == 1 ? '' : 's'} ago';
+    }
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFD1D5DB)),
-      ),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: categories
-            .map(
-              (category) => ChoiceChip(
-                label: Text(category),
-                selected: selected == category,
-                onSelected: (_) => onSelected(category),
-              ),
-            )
-            .toList(),
-      ),
-    );
+    return '${months[value.month - 1]} ${value.day}';
   }
 }
