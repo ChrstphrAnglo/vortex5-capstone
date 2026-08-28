@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
+import { useAuthContext } from '../hooks/useAuthContext'
 
 const EMPTY_FORM = {
   label: '',
@@ -35,6 +36,7 @@ const toPayload = (data) => {
 }
 
 const Thresholds = () => {
+  const { user } = useAuthContext()
   const [thresholds, setThresholds] = useState([])
   const [formData, setFormData] = useState(EMPTY_FORM)
   const [showModal, setShowModal] = useState(false)
@@ -44,12 +46,18 @@ const Thresholds = () => {
 
   useEffect(() => {
     const fetchThresholds = async () => {
-      const res = await fetch('/api/threshold')
+      const res = await fetch('/api/threshold', {
+        headers: { Authorization: `Bearer ${user?.token}` }
+      })
       const json = await res.json()
-      if (res.ok) setThresholds(json)
+      if (res.ok) {
+        setThresholds(json)
+      } else {
+        alert(`Failed to load thresholds: ${json.error || 'Unknown error'}`)
+      }
     }
     fetchThresholds()
-  }, [])
+  }, [user])
 
   const handleChange = (e) =>
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }))
@@ -61,7 +69,10 @@ const Thresholds = () => {
     e.preventDefault()
     const res = await fetch('/api/threshold', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${user?.token}`
+      },
       body: JSON.stringify(toPayload(formData))
     })
     const json = await res.json()
@@ -69,12 +80,22 @@ const Thresholds = () => {
       setThresholds(prev => [json, ...prev])
       setFormData(EMPTY_FORM)
       setShowModal(false)
+    } else {
+      alert(`Failed to add threshold: ${json.error || 'Unknown error'}`)
     }
   }
 
   const handleDelete = async (id) => {
-    const res = await fetch(`/api/threshold/${id}`, { method: 'DELETE' })
-    if (res.ok) setThresholds(prev => prev.filter(t => t._id !== id))
+    const res = await fetch(`/api/threshold/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${user?.token}` }
+    })
+    if (res.ok) {
+      setThresholds(prev => prev.filter(t => t._id !== id))
+    } else {
+      const json = await res.json().catch(() => ({}))
+      alert(`Failed to delete threshold: ${json.error || 'Unknown error'}`)
+    }
   }
 
   const handleEdit = (t) => {
@@ -88,7 +109,10 @@ const Thresholds = () => {
   const handleUpdate = async () => {
     const res = await fetch(`/api/threshold/${selectedId}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${user?.token}`
+      },
       body: JSON.stringify(toPayload(editData))
     })
     const json = await res.json()
@@ -96,6 +120,8 @@ const Thresholds = () => {
       setThresholds(prev => prev.map(t => (t._id === selectedId ? json : t)))
       setShowEditModal(false)
       setSelectedId(null)
+    } else {
+      alert(`Failed to update threshold: ${json.error || 'Unknown error'}`)
     }
   }
 
