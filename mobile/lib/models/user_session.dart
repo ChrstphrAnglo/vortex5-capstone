@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiUser {
+  final String id;
   final String email;
   final String firstName;
   final String lastName;
@@ -13,8 +14,10 @@ class ApiUser {
   final String pictureUrl;
   final String role;
   final String token;
+  final String? createdAt;
 
   ApiUser({
+    required this.id,
     required this.email,
     required this.firstName,
     required this.lastName,
@@ -24,10 +27,12 @@ class ApiUser {
     required this.pictureUrl,
     required this.role,
     required this.token,
+    this.createdAt,
   });
 
   factory ApiUser.fromJson(Map<String, dynamic> json) {
     return ApiUser(
+      id: json['_id']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
       firstName: json['firstName']?.toString() ?? '',
       lastName: json['lastName']?.toString() ?? '',
@@ -37,10 +42,12 @@ class ApiUser {
       pictureUrl: json['pictureUrl']?.toString() ?? '',
       role: json['role']?.toString() ?? '',
       token: json['token']?.toString() ?? '',
+      createdAt: json['createdAt']?.toString(),
     );
   }
 
   ApiUser copyWith({
+    String? id,
     String? email,
     String? firstName,
     String? lastName,
@@ -50,8 +57,10 @@ class ApiUser {
     String? pictureUrl,
     String? role,
     String? token,
+    String? createdAt,
   }) {
     return ApiUser(
+      id: id ?? this.id,
       email: email ?? this.email,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
@@ -61,6 +70,7 @@ class ApiUser {
       pictureUrl: pictureUrl ?? this.pictureUrl,
       role: role ?? this.role,
       token: token ?? this.token,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 }
@@ -83,6 +93,7 @@ class UserSession {
   static Future<void> loadFromStorage() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
+    final id = prefs.getString('id') ?? '';
     final email = prefs.getString('email');
     final firstName = prefs.getString('firstName');
     final lastName = prefs.getString('lastName');
@@ -91,6 +102,7 @@ class UserSession {
     final staffType = prefs.getString('staffType');
     final pictureUrl = prefs.getString('pictureUrl') ?? '';
     final role = prefs.getString('role');
+    final createdAt = prefs.getString('createdAt');
 
     if (token != null &&
         email != null &&
@@ -101,6 +113,7 @@ class UserSession {
         staffType != null &&
         role != null) {
       current = ApiUser(
+        id: id,
         email: email,
         firstName: firstName,
         lastName: lastName,
@@ -110,6 +123,7 @@ class UserSession {
         pictureUrl: pictureUrl,
         role: role,
         token: token,
+        createdAt: createdAt,
       );
     }
   }
@@ -117,6 +131,7 @@ class UserSession {
   static Future<void> _save(ApiUser u) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', u.token);
+    await prefs.setString('id', u.id);
     await prefs.setString('email', u.email);
     await prefs.setString('firstName', u.firstName);
     await prefs.setString('lastName', u.lastName);
@@ -125,6 +140,9 @@ class UserSession {
     await prefs.setString('staffType', u.staffType);
     await prefs.setString('pictureUrl', u.pictureUrl);
     await prefs.setString('role', u.role);
+    if (u.createdAt != null) {
+      await prefs.setString('createdAt', u.createdAt!);
+    }
   }
 
   static Future<void> logout() async {
@@ -227,7 +245,8 @@ class UserSession {
     required String newPassword,
     required String confirmPassword,
   }) async {
-    if (current == null) return "Not logged in.";
+    final u = current;
+    if (u == null) return "Not logged in.";
     if (currentPassword.trim().isEmpty ||
         newPassword.trim().isEmpty ||
         confirmPassword.trim().isEmpty) {
@@ -238,7 +257,30 @@ class UserSession {
     }
     final passErr = validateStrongPassword(newPassword);
     if (passErr != null) return passErr;
-    return null;
+
+    try {
+      final res = await http
+          .post(
+            Uri.parse("$baseUrl$userBasePath/me/password"),
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer ${u.token}",
+            },
+            body: jsonEncode({
+              "currentPassword": currentPassword,
+              "newPassword": newPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) return null;
+
+      return data["error"]?.toString() ?? "Failed to update password.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
   }
 
   // ===========================
@@ -470,7 +512,25 @@ class UserSession {
       final data = _safeJson(res.body);
 
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        final u = ApiUser.fromJson(data);
+        var u = ApiUser.fromJson(data);
+
+        // The login response only includes a handful of fields (no
+        // department/staffType/teacherId/pictureUrl/createdAt) — fetch the
+        // full profile so nothing gets wiped to empty on a fresh login.
+        try {
+          final profileRes = await http.get(
+            Uri.parse("$baseUrl$userBasePath/me"),
+            headers: {"Authorization": "Bearer ${u.token}"},
+          ).timeout(const Duration(seconds: 15));
+
+          if (profileRes.statusCode >= 200 && profileRes.statusCode < 300) {
+            final profileData = _safeJson(profileRes.body);
+            u = ApiUser.fromJson(profileData).copyWith(token: u.token);
+          }
+        } catch (_) {
+          // Non-fatal — fall back to the basic login response.
+        }
+
         current = u;
         await _save(u);
         return null;
@@ -508,6 +568,123 @@ class UserSession {
     }
 
     throw Exception("Failed to load users.");
+  }
+
+  // ===========================
+  // ADMIN: USER MANAGEMENT ACTIONS
+  // ===========================
+  static Future<String?> adminApproveUser(String userId) async {
+    final u = current;
+    if (u == null) return "Not logged in.";
+
+    try {
+      final res = await http
+          .patch(
+            Uri.parse("$baseUrl$userBasePath/$userId/approve"),
+            headers: {"Authorization": "Bearer ${u.token}"},
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) return null;
+
+      return data["error"]?.toString() ?? "Failed to approve user.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  static Future<String?> adminUpdateUserRole(String userId, String role) async {
+    final u = current;
+    if (u == null) return "Not logged in.";
+
+    try {
+      final res = await http
+          .patch(
+            Uri.parse("$baseUrl$userBasePath/$userId"),
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer ${u.token}",
+            },
+            body: jsonEncode({"role": role}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) return null;
+
+      return data["error"]?.toString() ?? "Failed to update role.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  static Future<String?> adminDeactivateUser(String userId) async {
+    final u = current;
+    if (u == null) return "Not logged in.";
+
+    try {
+      final res = await http
+          .patch(
+            Uri.parse("$baseUrl$userBasePath/$userId/deactivate"),
+            headers: {"Authorization": "Bearer ${u.token}"},
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) return null;
+
+      return data["error"]?.toString() ?? "Failed to deactivate user.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  static Future<String?> adminReactivateUser(String userId) async {
+    final u = current;
+    if (u == null) return "Not logged in.";
+
+    try {
+      final res = await http
+          .patch(
+            Uri.parse("$baseUrl$userBasePath/$userId/reactivate"),
+            headers: {"Authorization": "Bearer ${u.token}"},
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) return null;
+
+      return data["error"]?.toString() ?? "Failed to reactivate user.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
+  }
+
+  static Future<String?> adminDeleteUser(String userId) async {
+    final u = current;
+    if (u == null) return "Not logged in.";
+
+    try {
+      final res = await http
+          .delete(
+            Uri.parse("$baseUrl$userBasePath/$userId"),
+            headers: {"Authorization": "Bearer ${u.token}"},
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = _safeJson(res.body);
+
+      if (res.statusCode >= 200 && res.statusCode < 300) return null;
+
+      return data["error"]?.toString() ?? "Failed to delete user.";
+    } catch (e) {
+      return "Connection error: $e";
+    }
   }
 
   static dynamic _safeJson(String body) {
