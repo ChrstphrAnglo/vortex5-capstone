@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:vortex5_application_2/app_state.dart';
 import 'package:vortex5_application_2/models/alert_item.dart';
+import 'package:vortex5_application_2/widgets/error_state.dart';
 
 class AlertPage extends StatefulWidget {
   const AlertPage({super.key, required this.appState});
@@ -13,7 +14,10 @@ class AlertPage extends StatefulWidget {
 }
 
 class _AlertPageState extends State<AlertPage> {
+  static const _metricFields = ['All', 'Aqi', 'PM25', 'PM10', 'CO2', 'TVOC', 'Formaldehyde'];
+
   int _filter = 0;
+  String _metricFilter = 'All';
   bool _loading = true;
   String? _error;
 
@@ -54,6 +58,11 @@ class _AlertPageState extends State<AlertPage> {
                 ),
                 const SizedBox(height: 12),
                 _filterBar(),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _metricDropdown(),
+                ),
                 const SizedBox(height: 14),
                 Expanded(
                   child: _loading
@@ -75,7 +84,11 @@ class _AlertPageState extends State<AlertPage> {
                           ),
                         )
                       : _error != null
-                          ? _errorState(_error!)
+                          ? ErrorState(
+                              title: 'Could not load alerts',
+                              message: _error!,
+                              onRetry: _loadHistory,
+                            )
                           : RefreshIndicator(
                               onRefresh: _refresh,
                               child: alerts.isEmpty
@@ -178,36 +191,40 @@ class _AlertPageState extends State<AlertPage> {
     );
   }
 
-  // ── Error state ──────────────────────────────────────────────────────────
-  Widget _errorState(String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off_rounded, size: 48, color: Colors.black26),
-            const SizedBox(height: 12),
-            const Text(
-              'Could not load alerts',
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0F172A),
+  // ── Metric filter dropdown ───────────────────────────────────────────────
+  Widget _metricDropdown() {
+    return Container(
+      height: 40,
+      width: 150,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _metricFilter,
+          isExpanded: true,
+          isDense: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+              size: 18, color: Color(0xFF64748B)),
+          borderRadius: BorderRadius.circular(14),
+          onChanged: (value) {
+            if (value != null) setState(() => _metricFilter = value);
+          },
+          items: _metricFields.map((f) {
+            final label = f == 'All' ? 'All metrics' : AlertItem.fieldLabel(f);
+            return DropdownMenuItem(
+              value: f,
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            TextButton.icon(
-              onPressed: _loadHistory,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Retry'),
-            ),
-          ],
+            );
+          }).toList(),
         ),
       ),
     );
@@ -408,9 +425,12 @@ class _AlertPageState extends State<AlertPage> {
 
   // ── Helpers ──────────────────────────────────────────────────────────────
   List<AlertItem> _visibleAlerts() {
-    final history = widget.appState.alertHistory;
-    if (_filter == 1) return history.where((a) => !a.isRead).toList();
-    return history;
+    var result = widget.appState.alertHistory;
+    if (_filter == 1) result = result.where((a) => !a.isRead).toList();
+    if (_metricFilter != 'All') {
+      result = result.where((a) => a.field == _metricFilter).toList();
+    }
+    return result;
   }
 
   Color _accentFor(AlertItem alert) {

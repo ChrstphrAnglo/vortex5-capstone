@@ -6,15 +6,21 @@ import 'package:http/http.dart' as http;
 import '../models/bulletin_post.dart';
 import '../models/user_session.dart';
 
+/// Create AND edit share this page — an edit just pre-fills the fields from
+/// [existing] and PUTs instead of POSTing. The form itself is identical
+/// either way, so a second page would just be duplicated UI.
 class CreateAnnouncementPage extends StatefulWidget {
-  const CreateAnnouncementPage({super.key});
+  const CreateAnnouncementPage({super.key, this.existing});
+
+  /// When set, the page edits this post instead of creating a new one.
+  final BulletinPost? existing;
 
   @override
   State<CreateAnnouncementPage> createState() => _CreateAnnouncementPageState();
 }
 
 class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
-  static const _categories = [
+  static const _knownCategories = [
     'Events',
     'System Updates',
     'Achievements',
@@ -23,9 +29,37 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
 
   final _titleCtrl = TextEditingController();
   final _messageCtrl = TextEditingController();
-  String _category = 'Events';
-  bool _pinned = false;
+  late String _category;
+  late bool _pinned;
   bool _posting = false;
+
+  bool get _isEditing => widget.existing != null;
+
+  // The backend has no enum on category — it's free text. If an existing
+  // post's category isn't one of the known options (e.g. set some other way),
+  // include it anyway so the dropdown has a valid current value instead of
+  // crashing (DropdownButtonFormField requires its value to be among items).
+  late final List<String> _categoryOptions = [
+    ..._knownCategories,
+    if (widget.existing != null &&
+        !_knownCategories.contains(widget.existing!.category))
+      widget.existing!.category,
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final existing = widget.existing;
+    if (existing != null) {
+      _titleCtrl.text = existing.title;
+      _messageCtrl.text = existing.message;
+      _category = existing.category;
+      _pinned = existing.pinned;
+    } else {
+      _category = 'Events';
+      _pinned = false;
+    }
+  }
 
   @override
   void dispose() {
@@ -42,7 +76,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
     };
   }
 
-  Future<void> _post() async {
+  Future<void> _submit() async {
     final messenger = ScaffoldMessenger.of(context);
 
     if (_titleCtrl.text.trim().isEmpty || _messageCtrl.text.trim().isEmpty) {
@@ -55,32 +89,38 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
     setState(() => _posting = true);
 
     try {
-      final now = DateTime.now();
-      final uri = Uri.parse('${UserSession.baseUrl}/api/announcements');
-      final res = await http
-          .post(
-            uri,
-            headers: _headers(),
-            body: jsonEncode({
-              'title': _titleCtrl.text.trim(),
-              'description': _messageCtrl.text.trim(),
-              'category': _category,
-              'pinned': _pinned,
-              'date':
-                  '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}',
-              'time': '${now.hour}:${now.minute.toString().padLeft(2, '0')}',
-            }),
-          )
-          .timeout(const Duration(seconds: 30));
+      final body = <String, dynamic>{
+        'title': _titleCtrl.text.trim(),
+        'description': _messageCtrl.text.trim(),
+        'category': _category,
+        'pinned': _pinned,
+      };
+
+      final http.Response res;
+      if (_isEditing) {
+        final uri = Uri.parse('${UserSession.baseUrl}/api/announcements/${widget.existing!.id}');
+        res = await http
+            .put(uri, headers: _headers(), body: jsonEncode(body))
+            .timeout(const Duration(seconds: 30));
+      } else {
+        final now = DateTime.now();
+        body['date'] =
+            '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+        body['time'] = '${now.hour}:${now.minute.toString().padLeft(2, '0')}';
+        final uri = Uri.parse('${UserSession.baseUrl}/api/announcements');
+        res = await http
+            .post(uri, headers: _headers(), body: jsonEncode(body))
+            .timeout(const Duration(seconds: 30));
+      }
 
       if (!mounted) return;
       setState(() => _posting = false);
 
       if (res.statusCode == 200) {
-        final created = BulletinPost.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
-        Navigator.pop(context, created);
+        final saved = BulletinPost.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+        Navigator.pop(context, saved);
       } else {
-        String message = 'Failed to post announcement.';
+        String message = _isEditing ? 'Failed to save changes.' : 'Failed to post announcement.';
         try {
           final data = jsonDecode(res.body) as Map<String, dynamic>;
           message = data['error']?.toString() ?? message;
@@ -102,7 +142,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
         backgroundColor: Colors.white,
         elevation: 0,
         foregroundColor: const Color(0xFF0F172A),
-        title: Text('New Announcement',
+        title: Text(_isEditing ? 'Edit Announcement' : 'New Announcement',
             style: GoogleFonts.poppins(fontWeight: FontWeight.w800, fontSize: 20)),
       ),
       body: ListView(
@@ -122,7 +162,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
           DropdownButtonFormField<String>(
             initialValue: _category,
             decoration: _fieldDeco(),
-            items: _categories
+            items: _categoryOptions
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),
             onChanged: (value) => setState(() => _category = value ?? 'Events'),
@@ -148,7 +188,7 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
           SizedBox(
             height: 54,
             child: ElevatedButton(
-              onPressed: _posting ? null : _post,
+              onPressed: _posting ? null : _submit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF1E88FF),
                 foregroundColor: Colors.white,
@@ -161,7 +201,8 @@ class _CreateAnnouncementPageState extends State<CreateAnnouncementPage> {
                       width: 20,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
-                  : const Text('Post Announcement', style: TextStyle(fontWeight: FontWeight.w700)),
+                  : Text(_isEditing ? 'Save Changes' : 'Post Announcement',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
             ),
           ),
         ],

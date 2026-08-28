@@ -82,13 +82,22 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
   }
 
   Future<void> _deletePost(String id) async {
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final uri = Uri.parse('${UserSession.baseUrl}/api/announcements/$id');
       final res = await http.delete(uri, headers: _headers()).timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+
       if (res.statusCode == 200) {
         setState(() => _posts.removeWhere((p) => p.id == id));
+      } else {
+        messenger.showSnackBar(const SnackBar(content: Text('Failed to delete announcement.')));
       }
-    } catch (_) {}
+    } catch (_) {
+      if (!mounted) return;
+      messenger.showSnackBar(const SnackBar(content: Text('Network error deleting announcement.')));
+    }
   }
 
   Future<void> _togglePin(BulletinPost post) async {
@@ -129,6 +138,21 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
     setState(() => _posts.insert(0, created));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Announcement saved.')),
+    );
+  }
+
+  Future<void> _openEditPage(BulletinPost post) async {
+    final updated = await Navigator.push<BulletinPost>(
+      context,
+      MaterialPageRoute(builder: (_) => CreateAnnouncementPage(existing: post)),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      final index = _posts.indexWhere((p) => p.id == updated.id);
+      if (index != -1) _posts[index] = updated;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Announcement updated.')),
     );
   }
 
@@ -383,6 +407,12 @@ class _BulletinBoardPageState extends State<BulletinBoardPage> {
                     size: 18,
                     color: post.pinned ? _blue : const Color(0xFFCBD5E1),
                   ),
+                ),
+                const SizedBox(width: 14),
+                GestureDetector(
+                  onTap: () => _openEditPage(post),
+                  child: const Icon(Icons.edit_outlined,
+                      size: 18, color: Color(0xFFCBD5E1)),
                 ),
                 const SizedBox(width: 14),
                 GestureDetector(
