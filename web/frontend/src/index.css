@@ -983,6 +983,17 @@ form.signup, form.login {
   border: 1px solid #fecaca;
 }
 
+/* Success / informational message */
+.auth-success {
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+  background: #f0fdf4;
+  color: #16a34a;
+  font-size: 14px;
+  border: 1px solid #bbf7d0;
+}
+
 /* Submit button */
 .auth-submit {
   width: 100%;

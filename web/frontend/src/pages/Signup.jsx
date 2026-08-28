@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
-import { useSignup } from '../hooks/useSignup'
+import { useSendSignupCode } from '../hooks/useSendSignupCode'
 import PasswordRequirements from '../components/PasswordRequirements'
 import bewairLogoWhite from '../assets/bewair_logo_white.png'
 
@@ -19,19 +19,31 @@ const Signup = () => {
   const [password,  setPassword]  = useState('')
   const [showPw,    setShowPw]    = useState(false)
   const [localError, setLocalError] = useState(null)
-  const { signup, error, isLoading } = useSignup()
+  const { sendSignupCode, error, isLoading, success } = useSendSignupCode()
+  const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setLocalError(null)
+
+    if (!firstName || !lastName || !email) {
+      setLocalError('Please fill out all fields.')
+      return
+    }
 
     if (!isStrongPassword(password)) {
       setLocalError('Password does not meet the requirements below.')
       return
     }
 
-    await signup(email, password, firstName, lastName)
+    await sendSignupCode(email)
   }
+
+  useEffect(() => {
+    if (success) {
+      navigate('/verify-signup', { state: { email, password, firstName, lastName } })
+    }
+  }, [success, email, password, firstName, lastName, navigate])
 
   return (
     <div className="auth-page">
@@ -119,7 +131,7 @@ const Signup = () => {
             {(localError || error) && <div className="auth-error">{localError || error}</div>}
 
             <button className="auth-submit" disabled={isLoading}>
-              {isLoading ? 'Creating account…' : 'Create account'}
+              {isLoading ? 'Sending code…' : 'Continue'}
             </button>
           </form>
 

@@ -5,9 +5,9 @@ import { useAuthContext } from './hooks/useAuthContext';
 import Home from './pages/Home.jsx'
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
+import VerifySignup from './pages/VerifySignup.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
-import Configuration from './pages/Configuration.jsx';
 import Analytics from './pages/Analytics.jsx';
 import Auditlog from './pages/Auditlog.jsx'
 import Navbar from './components/Navbar.jsx'
@@ -29,7 +29,7 @@ function AppRoutes() {
   const location = useLocation()
   
   // Define public pages that should NOT have Navbar and Header
-  const publicPages = ['/login', '/signup', '/forgot-password', '/reset-password']
+  const publicPages = ['/login', '/signup', '/verify-signup', '/forgot-password', '/reset-password']
   const isPublicPage = publicPages.includes(location.pathname)
 
   return (
@@ -48,34 +48,34 @@ function AppRoutes() {
               element={user ? <Home /> : <Navigate to="/login" />}
             />
 
-            <Route 
+            <Route
               path="/configuration"
-              element={<Configuration />}
+              element={<Navigate to="/configuration/Thresholds" replace />}
             />
-            
-            <Route 
+
+            <Route
               path="/analytics"
-              element={<Analytics />}
+              element={user ? <Analytics /> : <Navigate to="/login" />}
             />
 
-            <Route 
+            <Route
               path="/classroomrecords"
-              element={<ClassroomRecords />}
+              element={user ? <ClassroomRecords /> : <Navigate to="/login" />}
             />
 
-            <Route 
+            <Route
               path="/alerts-and-notifications"
-              element={<AlertsAndNotifications />}
+              element={user ? <AlertsAndNotifications /> : <Navigate to="/login" />}
             />
 
-            <Route 
+            <Route
               path="/connect-sensor"
-              element={<ConnectSensor />}
+              element={user ? <ConnectSensor /> : <Navigate to="/login" />}
             />
 
             <Route
               path="/profile"
-              element={<Profile />}
+              element={user ? <Profile /> : <Navigate to="/login" />}
             />
 
             <Route
@@ -83,35 +83,37 @@ function AppRoutes() {
               element={user ? <DeviceDetail /> : <Navigate to="/login" />}
             />
             
-            <Route 
+            {/* Intentionally unguarded — a public kiosk/signage display, no login required */}
+            <Route
               path="/bulletin-board"
               element={<BulletinBoard />}
             />
 
-            <Route 
+            <Route
               path="/configuration/Thresholds"
-              element={<Thresholds />}
+              element={user ? <Thresholds /> : <Navigate to="/login" />}
             />
 
-            <Route 
+            <Route
               path="/configuration/WebBulletinBoard"
-              element={<WebBulletinBoard />}
+              element={user ? <WebBulletinBoard /> : <Navigate to="/login" />}
             />
 
-            <Route 
+            {/* Intentionally unguarded — a public kiosk/signage display, no login required */}
+            <Route
               path="/animation-viewer"
               element={<AnimationViewer />}
             />
 
-            <Route 
+            <Route
               path="/auditlog"
-              element={<Auditlog />}
+              element={user ? <Auditlog /> : <Navigate to="/login" />}
             />
 
-            <Route 
+            <Route
               path="/usermanagement"
-              element={<UserManagement />}
-            /> 
+              element={user ? <UserManagement /> : <Navigate to="/login" />}
+            />
 
             <Route
               path="/login"
@@ -121,6 +123,11 @@ function AppRoutes() {
             <Route
               path="/signup"
               element={!user ? <Signup /> : <Navigate to="/" />}
+            />
+
+            <Route
+              path="/verify-signup"
+              element={!user ? <VerifySignup /> : <Navigate to="/" />}
             />
 
             <Route

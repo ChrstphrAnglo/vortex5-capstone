@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useLogin } from '../hooks/useLogin'
 import bewairLogoWhite from '../assets/bewair_logo_white.png'
@@ -9,6 +9,8 @@ const Login = () => {
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
   const { login, error, isLoading } = useLogin()
+  const location = useLocation()
+  const infoMessage = location.state?.message
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -40,6 +42,8 @@ const Login = () => {
           <div className="auth-form-divider" />
 
           <form onSubmit={handleSubmit} className="auth-form">
+            {infoMessage && <div className="auth-success">{infoMessage}</div>}
+
             <div className="auth-field">
               <label className="auth-label">Email</label>
               <input
