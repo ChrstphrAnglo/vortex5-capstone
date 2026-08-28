@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_session.dart';
+import '../utils/validators.dart';
 import '../widgets/password_requirements.dart';
 import 'verify_code_page.dart';
 
@@ -70,6 +71,11 @@ class _RegisterPageState extends State<RegisterPage> {
         pass.isEmpty ||
         confirm.isEmpty) {
       _showMessage("Please fill out all fields.");
+      return;
+    }
+
+    if (!isValidEmail(email)) {
+      _showMessage("Please enter a valid email address.");
       return;
     }
 

@@ -6,6 +6,9 @@ import 'package:vortex5_application_2/app_state.dart';
 import 'package:vortex5_application_2/models/sensor_device.dart';
 import 'package:vortex5_application_2/pages/device_list_page.dart';
 import 'package:vortex5_application_2/pages/share_device_page.dart';
+import 'package:vortex5_application_2/utils/aqi_colors.dart';
+import 'package:vortex5_application_2/utils/device_dialogs.dart';
+import 'package:vortex5_application_2/widgets/error_state.dart';
 
 class HomePage extends StatefulWidget {
   final AppState appState;
@@ -122,38 +125,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _confirmReset(SensorDevice s) async {
-    if (s.status == SensorStatus.offline) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Device must be online to receive a reset command. '
-            'Use the BOOT button on the ESP32 instead.',
-          ),
-        ),
-      );
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reset Device?'),
-        content: Text(
-          'This will wipe the Wi-Fi credentials on ${s.name} and put it back '
-          'into provisioning mode. It will need to be re-provisioned.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reset', style: TextStyle(color: Colors.orange)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    final confirmed = await confirmResetDevice(context, s);
+    if (!confirmed || !mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final error = await widget.appState.resetDevice(s.id);
     if (!mounted) return;
@@ -171,7 +144,7 @@ class _HomePageState extends State<HomePage> {
     final curReading =
         (cur != null && cur.enabled) ? widget.appState.readingFor(cur.id) : null;
     final tint = curReading != null
-        ? _aqiColorFor(curReading.aqi)
+        ? aqiColorFor(curReading.aqi)
         : const Color(0xFF94A3B8);
 
     return Scaffold(
@@ -197,7 +170,16 @@ class _HomePageState extends State<HomePage> {
             children: [
               _roomFilter(),
               Expanded(
-                child: sensors.isEmpty ? _emptyState() : _carousel(sensors),
+                child: widget.appState.sensors.isEmpty &&
+                        widget.appState.refreshError != null
+                    ? ErrorState(
+                        title: 'Could not load devices',
+                        message: widget.appState.refreshError!,
+                        onRetry: () => widget.appState.refreshFromBackend(),
+                      )
+                    : sensors.isEmpty
+                        ? _emptyState()
+                        : _carousel(sensors),
               ),
             ],
           ),
@@ -481,7 +463,7 @@ class _SensorPanel extends StatelessWidget {
     final isOff = !sensor.enabled;
     final hasReading = reading != null && !isOff;
     final aqi = reading?.aqi ?? 0;
-    final color = !hasReading ? const Color(0xFF94A3B8) : _aqiColorFor(aqi);
+    final color = !hasReading ? const Color(0xFF94A3B8) : aqiColorFor(aqi);
 
     final components = <_Component>[
       _Component('PM2.5', 'µg/m³', reading?.pm25, 1, Icons.blur_on, 'pm25'),
@@ -841,23 +823,6 @@ class _Insight {
   const _Insight(this.level, this.color, this.advice);
 }
 
-// Severity palette (shared with AQI categories).
-const _cGood = Color(0xFF0A9A40);
-const _cModerate = Color(0xFFF59E0B);
-const _cUsg = Color(0xFFEA580C);
-const _cUnhealthy = Color(0xFFDC2626);
-const _cVeryUnhealthy = Color(0xFF9333EA);
-const _cHazardous = Color(0xFF7F1D1D);
-
-Color _aqiColorFor(int aqi) {
-  if (aqi <= 50) return _cGood;
-  if (aqi <= 100) return _cModerate;
-  if (aqi <= 150) return _cUsg;
-  if (aqi <= 200) return _cUnhealthy;
-  if (aqi <= 300) return _cVeryUnhealthy;
-  return _cHazardous;
-}
-
 // Recommended actions for the current AQI category (U.S. EPA AirNow guidance).
 List<String> _aqiActions(int aqi) {
   if (aqi <= 50) {
@@ -903,41 +868,41 @@ List<String> _aqiActions(int aqi) {
 _Insight _insightFor(String key, double v) {
   switch (key) {
     case 'pm25':
-      if (v <= 12) return const _Insight('Good', _cGood, 'Fine-particle (PM2.5) levels are healthy. No action needed.');
-      if (v <= 35.4) return const _Insight('Moderate', _cModerate, 'Acceptable. Unusually sensitive people should watch for symptoms during long exposure.');
-      if (v <= 55.4) return const _Insight('Unhealthy (SG)', _cUsg, 'Sensitive groups (asthma, children, elderly) may feel effects. Improve ventilation or run an air purifier.');
-      if (v <= 150.4) return const _Insight('Unhealthy', _cUnhealthy, 'Everyone may start to feel effects. Reduce indoor sources (smoke, cooking) and filter the air.');
-      return const _Insight('Very Unhealthy', _cVeryUnhealthy, 'Heavy fine-particle pollution. Limit exposure and filter the air immediately.');
+      if (v <= 12) return const _Insight('Good', aqiGood, 'Fine-particle (PM2.5) levels are healthy. No action needed.');
+      if (v <= 35.4) return const _Insight('Moderate', aqiModerate, 'Acceptable. Unusually sensitive people should watch for symptoms during long exposure.');
+      if (v <= 55.4) return const _Insight('Unhealthy (SG)', aqiUsg, 'Sensitive groups (asthma, children, elderly) may feel effects. Improve ventilation or run an air purifier.');
+      if (v <= 150.4) return const _Insight('Unhealthy', aqiUnhealthy, 'Everyone may start to feel effects. Reduce indoor sources (smoke, cooking) and filter the air.');
+      return const _Insight('Very Unhealthy', aqiVeryUnhealthy, 'Heavy fine-particle pollution. Limit exposure and filter the air immediately.');
     case 'pm10':
-      if (v <= 54) return const _Insight('Good', _cGood, 'Coarse-particle (PM10) levels are healthy.');
-      if (v <= 154) return const _Insight('Moderate', _cModerate, 'Acceptable dust levels. Sensitive people should limit long exposure.');
-      if (v <= 254) return const _Insight('Unhealthy (SG)', _cUsg, 'Elevated dust. Sensitive groups should improve ventilation.');
-      if (v <= 354) return const _Insight('Unhealthy', _cUnhealthy, 'High dust levels. Reduce sources and filter the air.');
-      return const _Insight('Very Unhealthy', _cVeryUnhealthy, 'Very high dust. Limit exposure and filter the air now.');
+      if (v <= 54) return const _Insight('Good', aqiGood, 'Coarse-particle (PM10) levels are healthy.');
+      if (v <= 154) return const _Insight('Moderate', aqiModerate, 'Acceptable dust levels. Sensitive people should limit long exposure.');
+      if (v <= 254) return const _Insight('Unhealthy (SG)', aqiUsg, 'Elevated dust. Sensitive groups should improve ventilation.');
+      if (v <= 354) return const _Insight('Unhealthy', aqiUnhealthy, 'High dust levels. Reduce sources and filter the air.');
+      return const _Insight('Very Unhealthy', aqiVeryUnhealthy, 'Very high dust. Limit exposure and filter the air now.');
     case 'co2':
-      if (v <= 800) return const _Insight('Good', _cGood, 'The space is well-ventilated.');
-      if (v <= 1000) return const _Insight('Moderate', _cModerate, 'Acceptable, but bring in fresh air if people feel drowsy.');
-      if (v <= 1500) return const _Insight('Stuffy', _cUsg, 'Air is getting stuffy. Increase ventilation.');
-      if (v <= 2000) return const _Insight('Poor', _cUnhealthy, 'Poor ventilation. Open windows or doors to bring CO₂ down.');
-      return const _Insight('Very Poor', _cVeryUnhealthy, 'High CO₂ can cause headaches and fatigue. Ventilate the room immediately.');
+      if (v <= 800) return const _Insight('Good', aqiGood, 'The space is well-ventilated.');
+      if (v <= 1000) return const _Insight('Moderate', aqiModerate, 'Acceptable, but bring in fresh air if people feel drowsy.');
+      if (v <= 1500) return const _Insight('Stuffy', aqiUsg, 'Air is getting stuffy. Increase ventilation.');
+      if (v <= 2000) return const _Insight('Poor', aqiUnhealthy, 'Poor ventilation. Open windows or doors to bring CO₂ down.');
+      return const _Insight('Very Poor', aqiVeryUnhealthy, 'High CO₂ can cause headaches and fatigue. Ventilate the room immediately.');
     case 'tvoc':
-      if (v <= 300) return const _Insight('Good', _cGood, 'Low levels of volatile organic compounds.');
-      if (v <= 500) return const _Insight('Moderate', _cModerate, 'Acceptable. Ventilate if you notice odors.');
-      if (v <= 1000) return const _Insight('Elevated', _cUsg, 'Elevated VOCs. Increase fresh air and check sources (cleaners, paint, new furniture).');
-      if (v <= 3000) return const _Insight('High', _cUnhealthy, 'High VOCs. Ventilate and remove the source.');
-      return const _Insight('Very High', _cVeryUnhealthy, 'Very high VOCs. Ventilate the room now and find the source.');
+      if (v <= 300) return const _Insight('Good', aqiGood, 'Low levels of volatile organic compounds.');
+      if (v <= 500) return const _Insight('Moderate', aqiModerate, 'Acceptable. Ventilate if you notice odors.');
+      if (v <= 1000) return const _Insight('Elevated', aqiUsg, 'Elevated VOCs. Increase fresh air and check sources (cleaners, paint, new furniture).');
+      if (v <= 3000) return const _Insight('High', aqiUnhealthy, 'High VOCs. Ventilate and remove the source.');
+      return const _Insight('Very High', aqiVeryUnhealthy, 'Very high VOCs. Ventilate the room now and find the source.');
     case 'temp':
-      if (v >= 20 && v <= 26) return const _Insight('Comfortable', _cGood, 'Temperature is in the comfortable range (20–26 °C).');
-      if (v >= 17 && v < 20) return const _Insight('Cool', _cModerate, 'Slightly cool. A little below the ideal 20–26 °C range.');
-      if (v > 26 && v <= 30) return const _Insight('Warm', _cModerate, 'Slightly warm. A little above the ideal 20–26 °C range.');
-      if (v < 17) return const _Insight('Cold', _cUnhealthy, 'Too cold for comfort. Consider heating the room.');
-      return const _Insight('Hot', _cUnhealthy, 'Too warm for comfort. Improve cooling or ventilation.');
+      if (v >= 20 && v <= 26) return const _Insight('Comfortable', aqiGood, 'Temperature is in the comfortable range (20–26 °C).');
+      if (v >= 17 && v < 20) return const _Insight('Cool', aqiModerate, 'Slightly cool. A little below the ideal 20–26 °C range.');
+      if (v > 26 && v <= 30) return const _Insight('Warm', aqiModerate, 'Slightly warm. A little above the ideal 20–26 °C range.');
+      if (v < 17) return const _Insight('Cold', aqiUnhealthy, 'Too cold for comfort. Consider heating the room.');
+      return const _Insight('Hot', aqiUnhealthy, 'Too warm for comfort. Improve cooling or ventilation.');
     case 'humidity':
-      if (v >= 30 && v <= 60) return const _Insight('Comfortable', _cGood, 'Humidity is in the healthy range (30–60%).');
-      if (v >= 20 && v < 30) return const _Insight('Dry', _cModerate, 'A bit dry. Below the ideal 30–60% range.');
-      if (v > 60 && v <= 70) return const _Insight('Humid', _cModerate, 'A bit humid. Above the ideal 30–60% range.');
-      if (v < 20) return const _Insight('Too Dry', _cUnhealthy, 'Very dry air can irritate eyes, skin, and airways. Consider a humidifier.');
-      return const _Insight('Too Humid', _cUnhealthy, 'High humidity encourages mold and dust mites. Improve ventilation or dehumidify.');
+      if (v >= 30 && v <= 60) return const _Insight('Comfortable', aqiGood, 'Humidity is in the healthy range (30–60%).');
+      if (v >= 20 && v < 30) return const _Insight('Dry', aqiModerate, 'A bit dry. Below the ideal 30–60% range.');
+      if (v > 60 && v <= 70) return const _Insight('Humid', aqiModerate, 'A bit humid. Above the ideal 30–60% range.');
+      if (v < 20) return const _Insight('Too Dry', aqiUnhealthy, 'Very dry air can irritate eyes, skin, and airways. Consider a humidifier.');
+      return const _Insight('Too Humid', aqiUnhealthy, 'High humidity encourages mold and dust mites. Improve ventilation or dehumidify.');
     default:
       return const _Insight('—', Color(0xFF94A3B8), 'No insight available.');
   }
@@ -1174,10 +1139,7 @@ class _GaugePainter extends CustomPainter {
 
   // Equal-width category segments (each gets the same slice of the arc).
   static const _bounds = <double>[0, 50, 100, 150, 200, 300, 500];
-  static const _bandColors = <Color>[
-    Color(0xFF0A9A40), Color(0xFFF59E0B), Color(0xFFEA580C),
-    Color(0xFFDC2626), Color(0xFF9333EA), Color(0xFF7F1D1D),
-  ];
+  static const _bandColors = aqiBandColors;
 
   int get _segCount => _bandColors.length;
 

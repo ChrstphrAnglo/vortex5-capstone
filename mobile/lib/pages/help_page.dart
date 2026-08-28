@@ -1,18 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../utils/aqi_colors.dart';
 
 class HelpPage extends StatelessWidget {
   const HelpPage({super.key});
-
-  // Same AQI category colors/breakpoints used in home_page.dart — kept in
-  // sync intentionally rather than shared, to avoid touching that file's
-  // internals for a reference page.
-  static const _cGood = Color(0xFF0A9A40);
-  static const _cModerate = Color(0xFFF59E0B);
-  static const _cUsg = Color(0xFFEA580C);
-  static const _cUnhealthy = Color(0xFFDC2626);
-  static const _cVeryUnhealthy = Color(0xFF9333EA);
-  static const _cHazardous = Color(0xFF7F1D1D);
 
   @override
   Widget build(BuildContext context) {
@@ -36,12 +27,12 @@ class HelpPage extends StatelessWidget {
             style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 13),
           ),
           const SizedBox(height: 12),
-          _aqiLegendRow(_cGood, 'Good', '0–50'),
-          _aqiLegendRow(_cModerate, 'Moderate', '51–100'),
-          _aqiLegendRow(_cUsg, 'Unhealthy for Sensitive Groups', '101–150'),
-          _aqiLegendRow(_cUnhealthy, 'Unhealthy', '151–200'),
-          _aqiLegendRow(_cVeryUnhealthy, 'Very Unhealthy', '201–300'),
-          _aqiLegendRow(_cHazardous, 'Hazardous', '300+'),
+          _aqiLegendRow(aqiGood, 'Good', '0–50'),
+          _aqiLegendRow(aqiModerate, 'Moderate', '51–100'),
+          _aqiLegendRow(aqiUsg, 'Unhealthy for Sensitive Groups', '101–150'),
+          _aqiLegendRow(aqiUnhealthy, 'Unhealthy', '151–200'),
+          _aqiLegendRow(aqiVeryUnhealthy, 'Very Unhealthy', '201–300'),
+          _aqiLegendRow(aqiHazardous, 'Hazardous', '300+'),
 
           const SizedBox(height: 28),
           _sectionTitle('Sensor Readings Explained'),

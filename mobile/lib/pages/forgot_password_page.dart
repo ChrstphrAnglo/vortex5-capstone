@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_session.dart';
+import '../utils/validators.dart';
 import 'reset_password_page.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
@@ -23,6 +24,10 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     final email = _emailCtrl.text.trim();
     if (email.isEmpty) {
       _showMessage("Enter your email.");
+      return;
+    }
+    if (!isValidEmail(email)) {
+      _showMessage("Please enter a valid email address.");
       return;
     }
 

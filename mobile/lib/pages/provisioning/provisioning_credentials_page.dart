@@ -33,6 +33,7 @@ class _ProvisioningCredentialsPageState
   bool _submitting = false;
   bool _hidePassword = true;
   String? _error;
+  bool _leaving = false;
 
   // Nearby networks for the picker.
   List<WifiNetwork> _networks = [];
@@ -269,9 +270,27 @@ class _ProvisioningCredentialsPageState
     }
   }
 
+  // If the user backs out of this page (system gesture, back button, or the
+  // AppBar arrow) without submitting, the phone is still force-bound to the
+  // sensor's internet-less setup network (set by ProvisioningScanPage before
+  // reaching here). Release that binding on the way out so the phone doesn't
+  // silently lose normal internet access. Ignored while a submit is in
+  // flight — the success path already releases it itself.
+  Future<void> _handleBackNavigation(bool didPop, Object? result) async {
+    if (didPop || _leaving || _submitting) return;
+    _leaving = true;
+    try {
+      await WiFiForIoTPlugin.forceWifiUsage(false);
+    } catch (_) {/* ignore — manual flow / unsupported */}
+    if (mounted) Navigator.of(context).pop();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: _handleBackNavigation,
+      child: Scaffold(
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E5BFF),
         foregroundColor: Colors.white,
@@ -414,6 +433,7 @@ class _ProvisioningCredentialsPageState
             ],
           ),
         ),
+      ),
       ),
     );
   }

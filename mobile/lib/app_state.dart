@@ -25,6 +25,7 @@ class AppState extends ChangeNotifier {
   List<AlertItem> _alertHistory = [];
   final Set<String> _readHistoryKeys = {};
 
+  String? _refreshError;
   String _activeSensorId = '';
   int _aqi = 0;
   String _aqiLabel = '--';
@@ -52,6 +53,10 @@ class AppState extends ChangeNotifier {
   bool get hasUnreadAlerts => unreadAlertCount > 0;
   bool get hasShownPopup => _hasShownPopup;
   bool get hasAnyDevice => _sensors.isNotEmpty;
+  // Only meaningful to show prominently when there's no data yet — a
+  // transient failure on a background poll after a successful initial load
+  // should keep showing the last-known-good data quietly instead.
+  String? get refreshError => _refreshError;
 
   SensorDevice get activeSensor => _sensors.firstWhere(
         (sensor) => sensor.id == _activeSensorId,
@@ -147,6 +152,8 @@ class AppState extends ChangeNotifier {
       ]);
 
       if (responses[0].statusCode != 200 || responses[1].statusCode != 200) {
+        _refreshError = 'Server error. Please try again.';
+        notifyListeners();
         return;
       }
 
@@ -207,11 +214,15 @@ class AppState extends ChangeNotifier {
         await _persistSettings();
       }
 
+      _refreshError = null;
       _syncCurrentReading(pushAlert: false);
       _rebuildAlerts();
       notifyListeners();
-    } catch (_) {
-      // Network/DNS error — silently keep last known state.
+    } catch (e) {
+      // Network/DNS error — keep last known state, but expose the failure so
+      // the UI can show it when there's nothing to fall back on.
+      _refreshError = 'Could not reach the server. Check your internet connection.';
+      notifyListeners();
     }
   }
 
@@ -268,38 +279,50 @@ class AppState extends ChangeNotifier {
 
   /// Admin-only: share a device with a user by email.
   Future<String?> shareDevice(String deviceId, String email) async {
-    final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/share');
-    final res = await http.post(
-      uri,
-      headers: _authHeaders,
-      body: jsonEncode({'email': email}),
-    ).timeout(const Duration(seconds: 5));
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 200) return null; // success
-    return body['error']?.toString() ?? 'Failed to share device';
+    try {
+      final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/share');
+      final res = await http.post(
+        uri,
+        headers: _authHeaders,
+        body: jsonEncode({'email': email}),
+      ).timeout(const Duration(seconds: 5));
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode == 200) return null; // success
+      return body['error']?.toString() ?? 'Failed to share device';
+    } catch (e) {
+      return 'Could not reach the server.';
+    }
   }
 
   /// Admin-only: revoke a user's access to a device.
   Future<String?> unshareDevice(String deviceId, String email) async {
-    final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/unshare');
-    final res = await http.post(
-      uri,
-      headers: _authHeaders,
-      body: jsonEncode({'email': email}),
-    ).timeout(const Duration(seconds: 5));
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 200) return null;
-    return body['error']?.toString() ?? 'Failed to revoke access';
+    try {
+      final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/unshare');
+      final res = await http.post(
+        uri,
+        headers: _authHeaders,
+        body: jsonEncode({'email': email}),
+      ).timeout(const Duration(seconds: 5));
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode == 200) return null;
+      return body['error']?.toString() ?? 'Failed to revoke access';
+    } catch (e) {
+      return 'Could not reach the server.';
+    }
   }
 
   /// Admin-only: send MQTT reset command to a device.
   /// Wipes Wi-Fi credentials on the ESP32 and reboots it into provisioning mode.
   Future<String?> resetDevice(String deviceId) async {
-    final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/reset');
-    final res = await http.post(uri, headers: _authHeaders).timeout(const Duration(seconds: 10));
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    if (res.statusCode == 200) return null;
-    return body['error']?.toString() ?? 'Failed to send reset command';
+    try {
+      final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/reset');
+      final res = await http.post(uri, headers: _authHeaders).timeout(const Duration(seconds: 10));
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode == 200) return null;
+      return body['error']?.toString() ?? 'Failed to send reset command';
+    } catch (e) {
+      return 'Could not reach the server.';
+    }
   }
 
   /// Admin-only: soft power a device on/off via MQTT.
@@ -329,24 +352,21 @@ class AppState extends ChangeNotifier {
 
   /// Admin-only: list users who have access to a device.
   Future<List<Map<String, dynamic>>> getDeviceUsers(String deviceId) async {
-    final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/users');
-    final res = await http.get(uri, headers: _authHeaders).timeout(const Duration(seconds: 5));
-    if (res.statusCode != 200) return [];
-    final list = jsonDecode(res.body) as List<dynamic>;
-    return list.cast<Map<String, dynamic>>();
+    try {
+      final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId/users');
+      final res = await http.get(uri, headers: _authHeaders).timeout(const Duration(seconds: 5));
+      if (res.statusCode != 200) return [];
+      final list = jsonDecode(res.body) as List<dynamic>;
+      return list.cast<Map<String, dynamic>>();
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> connectSensor(String sensorId) async {
     _activeSensorId = sensorId;
     _syncCurrentReading();
     await _persistSettings();
-    notifyListeners();
-  }
-
-  void markAlertsRead() {
-    for (final alert in _alerts) {
-      alert.isRead = true;
-    }
     notifyListeners();
   }
 

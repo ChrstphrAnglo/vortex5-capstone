@@ -27,8 +27,8 @@ class _DevicePageState extends State<DevicePage> {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = widget.appState.isAdmin;
-
+    // Only ever shown to admins — main_shell.dart leaves this tab off the
+    // nav entirely for staff, rather than showing it with a no-access notice.
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -59,7 +59,7 @@ class _DevicePageState extends State<DevicePage> {
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
-            child: isAdmin ? _addCard() : _viewerNotice(),
+            child: _addCard(),
           ),
         ),
       ),
@@ -144,42 +144,6 @@ class _DevicePageState extends State<DevicePage> {
     );
   }
 
-  // ── Non-admin notice ──────────────────────────────────────────────────────
-  Widget _viewerNotice() {
-    return Container(
-      width: double.infinity,
-      constraints: const BoxConstraints(maxWidth: 380),
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: const Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.lock_outline, size: 56, color: Color(0xFFCBD5E1)),
-          SizedBox(height: 16),
-          Text(
-            'Admins only',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A),
-            ),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Connecting new sensors is restricted to admin accounts. '
-            'Sensors shared with you appear on the Home tab.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: Color(0xFF64748B), fontSize: 14, height: 1.4),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 // ── Numbered step row ─────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'main_shell.dart';
 import '../models/user_session.dart';
+import '../utils/validators.dart';
 import 'register_page.dart';
 import 'forgot_password_page.dart';
 
@@ -43,6 +44,10 @@ class _LoginPageState extends State<LoginPage> {
       _showMessage("Please enter email and password.");
       return;
     }
+    if (!isValidEmail(email)) {
+      _showMessage("Please enter a valid email address.");
+      return;
+    }
 
     setState(() => _loading = true);
     final err = await UserSession.login(email: email, password: pass);
@@ -50,9 +55,15 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _loading = false);
 
     if (err == null) {
-      Navigator.pushReplacement(
+      // pushAndRemoveUntil (not pushReplacement) so any leftover routes below
+      // Login — e.g. WelcomePage, reached via a plain push — are cleared too.
+      // Otherwise MainShell's route stays poppable, its tab pages' AppBars
+      // auto-show a back arrow, and tapping it pops back to Welcome, which
+      // looks like being signed out even though the session is untouched.
+      Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (_) => const MainShell()),
+        (route) => false,
       );
     } else {
       _showMessage(err);

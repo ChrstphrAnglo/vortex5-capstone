@@ -1,5 +1,7 @@
+import 'dart:async' show TimeoutException;
 import 'dart:convert';
-import 'dart:io' show File;
+import 'dart:io' show File, HandshakeException, SocketException;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -86,6 +88,29 @@ class UserSession {
   }
 
   static const String userBasePath = "/api/user";
+
+  // Two timeout tiers instead of a scattered 8s-60s spread with no reasoning:
+  // most calls are ordinary CRUD against an already-warm backend; login,
+  // register, and sending the signup code get longer since they can hit a
+  // cold-starting free-tier backend and/or trigger a Brevo email round trip.
+  static const Duration _standardTimeout = Duration(seconds: 20);
+  static const Duration _authTimeout = Duration(seconds: 45);
+
+  // Maps a thrown exception to a plain-language message — never surfaces the
+  // raw exception text (e.g. "ClientException with SocketException...") to
+  // the user.
+  static String _friendlyNetworkError(Object e) {
+    if (e is TimeoutException) {
+      return "The server took too long to respond. Please try again.";
+    }
+    if (e is SocketException || e is HandshakeException) {
+      return "Can't reach the server. Check your internet connection and try again.";
+    }
+    if (e is FormatException) {
+      return "The server sent back something unexpected. Please try again.";
+    }
+    return "Something went wrong. Please try again.";
+  }
 
   // ===========================
   // PERSIST LOGIN
@@ -184,7 +209,7 @@ class UserSession {
               "staffType": staffType.trim(),
             }),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -205,7 +230,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to update profile.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -223,7 +248,7 @@ class UserSession {
         ..headers["Authorization"] = "Bearer ${u.token}"
         ..files.add(await http.MultipartFile.fromPath("picture", imageFile.path));
 
-      final streamedRes = await request.send().timeout(const Duration(seconds: 30));
+      final streamedRes = await request.send().timeout(_standardTimeout);
       final res = await http.Response.fromStream(streamedRes);
 
       final data = _safeJson(res.body);
@@ -236,7 +261,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to upload picture.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -271,7 +296,7 @@ class UserSession {
               "newPassword": newPassword,
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -279,7 +304,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to update password.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -303,7 +328,7 @@ class UserSession {
             },
             body: jsonEncode({"password": password}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -313,7 +338,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to delete account.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -330,7 +355,7 @@ class UserSession {
             headers: {"Content-Type": "application/json"},
             body: jsonEncode({"email": email.trim()}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -340,7 +365,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to send reset code.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -365,7 +390,7 @@ class UserSession {
               "newPassword": newPassword,
             }),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -375,7 +400,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to reset password.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -413,7 +438,7 @@ class UserSession {
             headers: {"Content-Type": "application/json"},
             body: jsonEncode({"email": email.trim()}),
           )
-          .timeout(const Duration(seconds: 30));
+          .timeout(_authTimeout);
 
       final data = _safeJson(res.body);
 
@@ -423,7 +448,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to send verification code.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -477,7 +502,7 @@ class UserSession {
               "code": code.trim(),
             }),
           )
-          .timeout(const Duration(seconds: 60));
+          .timeout(_authTimeout);
 
       final data = _safeJson(res.body);
 
@@ -487,7 +512,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Registration failed.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -507,7 +532,7 @@ class UserSession {
             headers: {"Content-Type": "application/json"},
             body: jsonEncode({"email": email.trim(), "password": password}),
           )
-          .timeout(const Duration(seconds: 60));
+          .timeout(_authTimeout);
 
       final data = _safeJson(res.body);
 
@@ -517,18 +542,30 @@ class UserSession {
         // The login response only includes a handful of fields (no
         // department/staffType/teacherId/pictureUrl/createdAt) — fetch the
         // full profile so nothing gets wiped to empty on a fresh login.
-        try {
-          final profileRes = await http.get(
-            Uri.parse("$baseUrl$userBasePath/me"),
-            headers: {"Authorization": "Bearer ${u.token}"},
-          ).timeout(const Duration(seconds: 15));
+        // Retried a couple of times (a cold-starting backend can be slow to
+        // respond right after the login call); non-fatal either way — the
+        // user is still logged in with the basic response as a fallback,
+        // just with those extra fields blank until the next successful sync.
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            final profileRes = await http.get(
+              Uri.parse("$baseUrl$userBasePath/me"),
+              headers: {"Authorization": "Bearer ${u.token}"},
+            ).timeout(const Duration(seconds: 15));
 
-          if (profileRes.statusCode >= 200 && profileRes.statusCode < 300) {
-            final profileData = _safeJson(profileRes.body);
-            u = ApiUser.fromJson(profileData).copyWith(token: u.token);
+            if (profileRes.statusCode >= 200 && profileRes.statusCode < 300) {
+              final profileData = _safeJson(profileRes.body);
+              u = ApiUser.fromJson(profileData).copyWith(token: u.token);
+            } else {
+              debugPrint(
+                  "UserSession.login: /me returned ${profileRes.statusCode} after login (attempt ${attempt + 1}/3)");
+            }
+            break;
+          } catch (e) {
+            debugPrint(
+                "UserSession.login: /me fetch failed after login (attempt ${attempt + 1}/3): $e");
+            if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
           }
-        } catch (_) {
-          // Non-fatal — fall back to the basic login response.
         }
 
         current = u;
@@ -538,7 +575,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Invalid credentials.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -559,7 +596,7 @@ class UserSession {
             "Authorization": "Bearer ${u.token}",
           },
         )
-        .timeout(const Duration(seconds: 8));
+        .timeout(_standardTimeout);
 
     final data = _safeJson(res.body);
 
@@ -583,7 +620,7 @@ class UserSession {
             Uri.parse("$baseUrl$userBasePath/$userId/approve"),
             headers: {"Authorization": "Bearer ${u.token}"},
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -591,7 +628,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to approve user.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -609,7 +646,7 @@ class UserSession {
             },
             body: jsonEncode({"role": role}),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -617,7 +654,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to update role.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -631,7 +668,7 @@ class UserSession {
             Uri.parse("$baseUrl$userBasePath/$userId/deactivate"),
             headers: {"Authorization": "Bearer ${u.token}"},
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -639,7 +676,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to deactivate user.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -653,7 +690,7 @@ class UserSession {
             Uri.parse("$baseUrl$userBasePath/$userId/reactivate"),
             headers: {"Authorization": "Bearer ${u.token}"},
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -661,7 +698,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to reactivate user.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 
@@ -675,7 +712,7 @@ class UserSession {
             Uri.parse("$baseUrl$userBasePath/$userId"),
             headers: {"Authorization": "Bearer ${u.token}"},
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(_standardTimeout);
 
       final data = _safeJson(res.body);
 
@@ -683,7 +720,7 @@ class UserSession {
 
       return data["error"]?.toString() ?? "Failed to delete user.";
     } catch (e) {
-      return "Connection error: $e";
+      return _friendlyNetworkError(e);
     }
   }
 

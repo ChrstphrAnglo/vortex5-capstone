@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:vortex5_application_2/app_state.dart';
 import 'package:vortex5_application_2/models/sensor_device.dart';
 import 'package:vortex5_application_2/pages/share_device_page.dart';
+import 'package:vortex5_application_2/utils/device_dialogs.dart';
 
 /// Admin-facing list of all devices with quick power (on/off) and reset
 /// controls on each row. Opened from the Home page overflow menu.
@@ -50,38 +51,8 @@ class _DeviceListPageState extends State<DeviceListPage> {
   }
 
   Future<void> _confirmReset(SensorDevice s) async {
-    if (s.status == SensorStatus.offline) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Device must be online to receive a reset command. '
-            'Use the BOOT button on the ESP32 instead.',
-          ),
-        ),
-      );
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Reset Device?'),
-        content: Text(
-          'This will wipe the Wi-Fi credentials on ${s.name} and put it back '
-          'into provisioning mode. It will need to be re-provisioned.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reset', style: TextStyle(color: Colors.orange)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    final confirmed = await confirmResetDevice(context, s);
+    if (!confirmed || !mounted) return;
 
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _busy.add(s.id));
@@ -117,21 +88,30 @@ class _DeviceListPageState extends State<DeviceListPage> {
         title: const Text('List of Devices'),
       ),
       body: SafeArea(
-        child: sensors.isEmpty
-            ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Text(
-                    'No devices yet.',
-                    style: TextStyle(color: Color(0xFF64748B)),
-                  ),
+        child: RefreshIndicator(
+          onRefresh: widget.appState.refreshFromBackend,
+          child: sensors.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    Padding(
+                      padding: EdgeInsets.only(top: 80),
+                      child: Center(
+                        child: Text(
+                          'No devices yet.',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  itemCount: sensors.length,
+                  itemBuilder: (ctx, i) => _deviceRow(sensors[i]),
                 ),
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: sensors.length,
-                itemBuilder: (ctx, i) => _deviceRow(sensors[i]),
-              ),
+        ),
       ),
     );
   }

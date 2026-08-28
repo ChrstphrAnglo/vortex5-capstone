@@ -31,11 +31,18 @@ class _SplashPageState extends State<SplashPage>
   }
 
   Future<void> _bootstrap() async {
-    // Run load + minimum display time in parallel
-    await Future.wait([
-      UserSession.loadFromStorage(),
-      Future.delayed(const Duration(milliseconds: 1500)),
-    ]);
+    // Run load + minimum display time in parallel. If reading the stored
+    // session throws (rare platform-channel hiccup), don't let the splash
+    // screen hang forever with no way forward — fall back to treating it
+    // like there's no session, same as a logged-out user.
+    try {
+      await Future.wait([
+        UserSession.loadFromStorage(),
+        Future.delayed(const Duration(milliseconds: 1500)),
+      ]);
+    } catch (e) {
+      debugPrint('SplashPage: loadFromStorage failed, defaulting to logged-out: $e');
+    }
     if (!mounted) return;
 
     Navigator.pushReplacement(
