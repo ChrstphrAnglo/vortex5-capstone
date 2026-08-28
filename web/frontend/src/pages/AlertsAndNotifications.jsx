@@ -21,10 +21,10 @@ const AlertsAndNotifications = () => {
 
   const [tab, setTab] = useState('current') // 'current' | 'history'
 
-  const { data: currentData, loading: curLoading } = useCachedFetch(
+  const { data: currentData, loading: curLoading, error: curError } = useCachedFetch(
     user ? '/api/alerts/current' : null, user?.token, { pollInterval: 15000 }
   )
-  const { data: historyData } = useCachedFetch(
+  const { data: historyData, error: historyError } = useCachedFetch(
     user ? '/api/alerts/history?days=7' : null, user?.token, { pollInterval: 15000 }
   )
 
@@ -75,10 +75,16 @@ const AlertsAndNotifications = () => {
           </div>
 
           {current.length === 0 ? (
-            <div className="dash-empty dash-empty-ok">
-              <span className="dash-ok-icon">✓</span>
-              No active alerts. All readings are within thresholds.
-            </div>
+            curError ? (
+              <div className="dash-empty" style={{ color: '#dc2626' }}>
+                Could not load current alerts: {curError}
+              </div>
+            ) : (
+              <div className="dash-empty dash-empty-ok">
+                <span className="dash-ok-icon">✓</span>
+                No active alerts. All readings are within thresholds.
+              </div>
+            )
           ) : (
             <div className="dash-alert-list">
               {current.map((a, i) => (
@@ -115,9 +121,15 @@ const AlertsAndNotifications = () => {
           </div>
 
           {history.length === 0 ? (
-            <div className="dash-empty">
-              No alerts in the last 7 days. Your air quality has stayed within thresholds.
-            </div>
+            historyError ? (
+              <div className="dash-empty" style={{ color: '#dc2626' }}>
+                Could not load alert history: {historyError}
+              </div>
+            ) : (
+              <div className="dash-empty">
+                No alerts in the last 7 days. Your air quality has stayed within thresholds.
+              </div>
+            )
           ) : (
             <div className="alerts-history-list">
               {history.map((a, i) => (

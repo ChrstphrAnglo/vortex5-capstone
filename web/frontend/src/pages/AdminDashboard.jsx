@@ -62,7 +62,10 @@ const AdminDashboard = () => {
   if (loading) {
     return <div className="dash-page"><p>Loading dashboard...</p></div>
   }
-  if (error) {
+  // Only take over the whole page when there's no data to fall back on
+  // (first-load failure). Once real data has loaded, a later transient
+  // poll failure shouldn't wipe out an otherwise-working dashboard.
+  if (error && !data) {
     return <div className="dash-page"><p style={{ color: 'red' }}>{error}</p></div>
   }
   if (!data) return null
@@ -71,6 +74,11 @@ const AdminDashboard = () => {
 
   return (
     <div className="dash-page">
+      {error && (
+        <p style={{ color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', marginBottom: 12 }}>
+          {error} — showing last loaded data.
+        </p>
+      )}
       {/* Header */}
       <div className="dash-header">
         <div>

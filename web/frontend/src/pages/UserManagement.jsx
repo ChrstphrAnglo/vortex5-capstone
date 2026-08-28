@@ -186,31 +186,49 @@ const UserManagement = () => {
 
     // ================= CONFIRM ROLE CHANGES =================
     const confirmRoleChanges = async () => {
+        const succeeded = {}
+        const failed = []
+
         for (const userId in pendingRoles) {
             const userToUpdate = users.find(u => u._id === userId)
-            const oldRole = userToUpdate?.role
             const newRole = pendingRoles[userId]
-            
-            await fetch(`/api/user/${userId}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${user.token}`
-                },
-                body: JSON.stringify({ 
-                    role: newRole,
-                    performedBy: user.email  // Send admin's email to backend
+
+            try {
+                const res = await fetch(`/api/user/${userId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${user.token}`
+                    },
+                    body: JSON.stringify({
+                        role: newRole,
+                        performedBy: user.email  // Send admin's email to backend
+                    })
                 })
-            })
+                if (res.ok) {
+                    succeeded[userId] = newRole
+                } else {
+                    failed.push(userToUpdate?.email || userId)
+                }
+            } catch {
+                failed.push(userToUpdate?.email || userId)
+            }
         }
 
+        // Only merge the changes that actually succeeded — a failed PATCH
+        // (e.g. blocked self-role-change, or a race with another admin)
+        // should not silently look like it worked.
         setUsers(users.map(u =>
-            pendingRoles[u._id] ? { ...u, role: pendingRoles[u._id] } : u
+            succeeded[u._id] ? { ...u, role: succeeded[u._id] } : u
         ))
 
         setPendingRoles({})
-        setSuccessMessage('Changes applied')
-        setTimeout(() => setSuccessMessage(''), 2000)
+        setSuccessMessage(
+            failed.length === 0
+                ? 'Changes applied'
+                : `Some changes failed: ${failed.join(', ')}`
+        )
+        setTimeout(() => setSuccessMessage(''), failed.length === 0 ? 2000 : 4000)
     }
 
     // ================= CREATE USER (ADMIN) =================
