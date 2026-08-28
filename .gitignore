@@ -32,3 +32,6 @@ firmware/bewair_node/secrets.h
 
 # Claude Code project docs (local-only)
 CLAUDE.md
+
+# Claude Code local tooling state (settings, scheduled tasks, stale worktrees)
+.claude/
