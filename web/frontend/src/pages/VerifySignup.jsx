@@ -7,7 +7,7 @@ import bewairLogoWhite from '../assets/bewair_logo_white.png'
 const VerifySignup = () => {
   const location = useLocation()
   const navigate = useNavigate()
-  const { email, password, firstName, lastName } = location.state || {}
+  const { email, password, firstName, lastName, teacherId, department, staffType } = location.state || {}
 
   const [code, setCode] = useState('')
 
@@ -15,10 +15,10 @@ const VerifySignup = () => {
   const { sendSignupCode, isLoading: resending } = useSendSignupCode()
 
   useEffect(() => {
-    if (!email || !password || !firstName || !lastName) {
+    if (!email || !password || !firstName || !lastName || !teacherId || !department || !staffType) {
       navigate('/signup')
     }
-  }, [email, password, firstName, lastName, navigate])
+  }, [email, password, firstName, lastName, teacherId, department, staffType, navigate])
 
   useEffect(() => {
     if (success) {
@@ -28,7 +28,7 @@ const VerifySignup = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    await signup(email, password, firstName, lastName, code)
+    await signup(email, password, firstName, lastName, code, teacherId, department, staffType)
   }
 
   return (

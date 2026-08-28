@@ -12,11 +12,28 @@ const isStrongPassword = (password) =>
   /\d/.test(password) &&
   /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]/.test(password)
 
+// Same lists as the mobile app's registration form — kept identical so
+// Department/Staff Type stay consistent data regardless of which app
+// someone signs up from.
+const DEPARTMENTS = [
+  'Science Department',
+  'Mathematics Department',
+  'English Department',
+  'Social Studies Department',
+  'ICT Department',
+]
+
+const STAFF_TYPES = ['Teacher', 'Student Teacher']
+
 const Signup = () => {
   const [firstName, setFirstName] = useState('')
   const [lastName,  setLastName]  = useState('')
   const [email,     setEmail]     = useState('')
+  const [teacherId, setTeacherId] = useState('')
+  const [department, setDepartment] = useState('')
+  const [staffType, setStaffType] = useState('')
   const [password,  setPassword]  = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [showPw,    setShowPw]    = useState(false)
   const [localError, setLocalError] = useState(null)
   const { sendSignupCode, error, isLoading, success } = useSendSignupCode()
@@ -26,7 +43,7 @@ const Signup = () => {
     e.preventDefault()
     setLocalError(null)
 
-    if (!firstName || !lastName || !email) {
+    if (!firstName || !lastName || !email || !teacherId || !department || !staffType) {
       setLocalError('Please fill out all fields.')
       return
     }
@@ -36,14 +53,21 @@ const Signup = () => {
       return
     }
 
+    if (password !== confirmPassword) {
+      setLocalError('Passwords do not match.')
+      return
+    }
+
     await sendSignupCode(email)
   }
 
   useEffect(() => {
     if (success) {
-      navigate('/verify-signup', { state: { email, password, firstName, lastName } })
+      navigate('/verify-signup', {
+        state: { email, password, firstName, lastName, teacherId, department, staffType }
+      })
     }
-  }, [success, email, password, firstName, lastName, navigate])
+  }, [success, email, password, firstName, lastName, teacherId, department, staffType, navigate])
 
   return (
     <div className="auth-page">
@@ -106,6 +130,46 @@ const Signup = () => {
             </div>
 
             <div className="auth-field">
+              <label className="auth-label">Teacher ID</label>
+              <input
+                className="auth-input"
+                type="text"
+                placeholder="TCHR-2026-001"
+                value={teacherId}
+                onChange={(e) => setTeacherId(e.target.value)}
+              />
+            </div>
+
+            <div className="auth-row">
+              <div className="auth-field">
+                <label className="auth-label">Department</label>
+                <select
+                  className="auth-input"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                >
+                  <option value="" disabled>Select department</option>
+                  {DEPARTMENTS.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="auth-field">
+                <label className="auth-label">Staff type</label>
+                <select
+                  className="auth-input"
+                  value={staffType}
+                  onChange={(e) => setStaffType(e.target.value)}
+                >
+                  <option value="" disabled>Select staff type</option>
+                  {STAFF_TYPES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="auth-field">
               <label className="auth-label">Password</label>
               <div className="auth-pw-wrap">
                 <input
@@ -127,6 +191,17 @@ const Signup = () => {
             </div>
 
             {password && <PasswordRequirements password={password} />}
+
+            <div className="auth-field">
+              <label className="auth-label">Confirm password</label>
+              <input
+                className="auth-input"
+                type={showPw ? 'text' : 'password'}
+                placeholder="Confirm your password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
 
             {(localError || error) && <div className="auth-error">{localError || error}</div>}
 
