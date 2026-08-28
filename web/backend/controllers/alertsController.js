@@ -126,16 +126,27 @@ const getAlertHistory = async (req, res) => {
         at: '$createdAt'
       }},
 
-      // 8. Most recent first, cap at 100
-      { $sort: { at: -1 } },
-      { $limit: 100 }
+      // 8. Oldest first — required so the cooldown pass below can walk
+      //    events in chronological order per device+field.
+      { $sort: { at: 1 } }
     ])
+
+    // A raw "crossing" (step 7 above) fires every time a noisy reading dips
+    // below a threshold and pops back above it — which can happen many times
+    // a minute. Collapse that into real alerts: once a device+field alerts,
+    // suppress further alerts for the same device+field until the cooldown
+    // elapses, unless the condition drastically worsens (warning -> high),
+    // which always surfaces immediately.
+    const surfaced = applyCooldown(events, ALERT_COOLDOWN_MS)
+
+    // Most recent 100 surfaced alerts, newest first.
+    const capped = surfaced.slice(-100).reverse()
 
     // Enrich with device name and room (tiny lookup — only device documents, not readings)
     const devices = await Device.find({ deviceId: { $in: userDeviceIds } }).lean()
     const deviceMap = Object.fromEntries(devices.map(d => [d.deviceId, d]))
 
-    const result = events
+    const result = capped
       .map(e => {
         const device = deviceMap[e.deviceId]
         if (!device) return null
@@ -150,6 +161,33 @@ const getAlertHistory = async (req, res) => {
 }
 
 const FIELDS = ['Aqi', 'PM25', 'PM10', 'CO2', 'TVOC', 'Formaldehyde']
+
+// Minimum time between surfaced alerts for the same device+field.
+const ALERT_COOLDOWN_MS = 15 * 60 * 1000 // 15 minutes
+
+// Collapses a chronological (ascending `at`) list of raw threshold crossings
+// into real alerts: at most one per device+field per cooldown window, unless
+// the severity escalates from 'warning' to 'high' — a drastic worsening,
+// which always bypasses the cooldown and surfaces right away.
+function applyCooldown(events, cooldownMs) {
+  const lastByKey = new Map() // `${deviceId}|${field}` -> { at, severity }
+  const surfaced = []
+
+  for (const event of events) {
+    const key = `${event.deviceId}|${event.field}`
+    const last = lastByKey.get(key)
+
+    const cooledDown = !last || (new Date(event.at) - new Date(last.at)) >= cooldownMs
+    const drasticWorsening = last && last.severity === 'warning' && event.severity === 'high'
+
+    if (!last || cooledDown || drasticWorsening) {
+      surfaced.push(event)
+      lastByKey.set(key, { at: event.at, severity: event.severity })
+    }
+  }
+
+  return surfaced
+}
 
 function buildLimits(thresholdDoc) {
   return {
