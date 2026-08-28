@@ -128,7 +128,14 @@ const resetPassword = async (req, res) => {
 
 const loginUser = async (req, res) => {
     const {email, password} = req.body
-    
+
+    // Reject non-string email/password before they ever reach a Mongo query —
+    // otherwise a body like {"email":{"$gt":""}} turns User.findOne({email})
+    // into a query-operator match instead of a text comparison.
+    if (typeof email !== 'string' || typeof password !== 'string') {
+        return res.status(400).json({ error: 'Invalid email or password.' })
+    }
+
     try {
         const user = await User.login(email, password)
         const token = createToken(user._id)
@@ -251,6 +258,10 @@ const getUsers = async (req, res) => {
 
 const deactivateUser = async (req, res) => {
     const { id } = req.params
+
+    if (req.user._id.toString() === id) {
+        return res.status(400).json({ error: 'You cannot deactivate your own account' })
+    }
 
     try {
         const user = await User.findByIdAndUpdate(
@@ -377,6 +388,10 @@ const updateUserRole = async (req, res) => {
 
     if (!['admin', 'staff'].includes(role)) {
         return res.status(400).json({ error: 'Invalid role' })
+    }
+
+    if (req.user._id.toString() === id) {
+        return res.status(400).json({ error: 'You cannot change your own role' })
     }
 
     try {

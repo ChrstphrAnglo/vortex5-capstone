@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { useAuthContext } from '../hooks/useAuthContext'
 
 const LOGS_PER_PAGE = 10
 
 const AuditLogs = () => {
+  const { user } = useAuthContext()
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -12,9 +14,15 @@ const AuditLogs = () => {
   const [sortDate, setSortDate] = useState('latest')
 
   useEffect(() => {
+    if (!user || user.role !== 'admin') {
+      setLoading(false)
+      return
+    }
     const fetchLogs = async () => {
       try {
-        const res = await fetch('/api/auditlog')
+        const res = await fetch('/api/auditlog', {
+          headers: { Authorization: `Bearer ${user.token}` }
+        })
         const json = await res.json()
         if (res.ok) {
           setLogs(json)
@@ -28,8 +36,10 @@ const AuditLogs = () => {
       }
     }
     fetchLogs()
-  }, [])
+  }, [user])
 
+  if (!user) return <p>Please log in.</p>
+  if (user.role !== 'admin') return <p style={{ color: 'red' }}>Audit Logs is admin-only.</p>
   if (loading) return <p>Loading audit logs...</p>
   if (error) return <p style={{ color: 'red' }}>{error}</p>
 

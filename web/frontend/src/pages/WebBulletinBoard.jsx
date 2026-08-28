@@ -406,12 +406,14 @@ const handleUpdate = async () => {
 <div className="section-header">
   <h2 className="page-title">Educational Media Display</h2>
 
-  <button className="add-btn" onClick={() => setShowMediaModal(true)}>
-    + Upload Video
-  </button>
+  {isAdmin && (
+    <button className="add-btn" onClick={() => setShowMediaModal(true)}>
+      + Upload Video
+    </button>
+  )}
 </div>
 
-{showMediaModal && (
+{showMediaModal && isAdmin && (
   <div className="modal-overlay">
     <div className="modal-content">
       <form
@@ -473,28 +475,30 @@ const handleUpdate = async () => {
         />
       </video>
 
-      <button
-        className="danger-media-btn"
-        onClick={async () => {
-          if (!confirm(`Delete "${m.title || 'Untitled'}"?`)) return
-          try {
-            const res = await fetch(`/api/media/${m._id}`, {
-              method: 'DELETE',
-              headers: { Authorization: `Bearer ${user?.token}` },
-            })
-            const json = await res.json()
-            if (!res.ok) {
-              alert(`Delete failed: ${json.error || 'Unknown error'}`)
-              return
+      {isAdmin && (
+        <button
+          className="danger-media-btn"
+          onClick={async () => {
+            if (!confirm(`Delete "${m.title || 'Untitled'}"?`)) return
+            try {
+              const res = await fetch(`/api/media/${m._id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${user?.token}` },
+              })
+              const json = await res.json()
+              if (!res.ok) {
+                alert(`Delete failed: ${json.error || 'Unknown error'}`)
+                return
+              }
+              setMediaList(prev => prev.filter(x => x._id !== m._id))
+            } catch (err) {
+              alert(`Delete failed: ${err.message}`)
             }
-            setMediaList(prev => prev.filter(x => x._id !== m._id))
-          } catch (err) {
-            alert(`Delete failed: ${err.message}`)
-          }
-        }}
-      >
-        Delete
-      </button>
+          }}
+        >
+          Delete
+        </button>
+      )}
     </div>
   ))}
 </div>
