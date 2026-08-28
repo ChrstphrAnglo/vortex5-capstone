@@ -4,6 +4,7 @@ import { useAuthContext } from '../hooks/useAuthContext'
 
 const WebBulletinBoard = () => {
   const { user } = useAuthContext()
+  const isAdmin = user && user.role === 'admin'
 
  /* ------------------ EDUCATIONAL VIDEO -------------- */
 
@@ -87,11 +88,11 @@ const handleSubmit = async (e) => {
     return
   }
 
-  // 🔌 connect this to your backend later
   const res = await fetch('/api/announcements', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${user?.token}`
     },
     body: JSON.stringify(formData)
   })
@@ -107,6 +108,8 @@ const handleSubmit = async (e) => {
       date: '',
       time: ''
     })
+  } else {
+    alert(`Failed to add announcement: ${json.error || 'Unknown error'}`)
   }
 }
 const [formData, setFormData] = useState({
@@ -127,11 +130,15 @@ useEffect(() => {
 
 const handleDelete = async (id) => {
   const res = await fetch(`/api/announcements/${id}`, {
-    method: 'DELETE'
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${user?.token}` }
   })
 
   if (res.ok) {
     setAnnouncements(prev => prev.filter(a => a._id !== id))
+  } else {
+    const json = await res.json().catch(() => ({}))
+    alert(`Failed to delete announcement: ${json.error || 'Unknown error'}`)
   }
 }
 const handleEdit = (a) => {
@@ -156,7 +163,8 @@ const handleUpdate = async () => {
   const res = await fetch(`/api/announcements/${selectedId}`, {
     method: 'PUT',
     headers: {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${user?.token}`
     },
     body: JSON.stringify(editData)
   })
@@ -169,6 +177,8 @@ const handleUpdate = async () => {
     )
     setShowEditModal(false)
     setSelectedId(null)
+  } else {
+    alert(`Failed to update announcement: ${json.error || 'Unknown error'}`)
   }
 }
 
@@ -180,12 +190,14 @@ const handleUpdate = async () => {
 
 <div className="section-header">
   <h2 className="page-title">Announcements</h2>
-  <button className="add-btn" onClick={() => setShowModal(true)}>
-    + Add Announcement
-  </button>
+  {isAdmin && (
+    <button className="add-btn" onClick={() => setShowModal(true)}>
+      + Add Announcement
+    </button>
+  )}
 </div>
 
-{showModal && (
+{showModal && isAdmin && (
   <div className="modal-overlay">
     <div className="modal-content">
       <form onSubmit={handleSubmit} className="threshold-box">
@@ -260,7 +272,7 @@ const handleUpdate = async () => {
   </div>
 )}
 
-{showEditModal && (
+{showEditModal && isAdmin && (
   <div className="modal-overlay">
     <div className="modal-content">
       <form
@@ -349,7 +361,7 @@ const handleUpdate = async () => {
     <thead>
       <tr>
         <th>Title</th>
-        <th className="action-col">Status</th>
+        {isAdmin && <th className="action-col">Status</th>}
       </tr>
     </thead>
 
@@ -358,23 +370,25 @@ const handleUpdate = async () => {
         <tr key={a._id}>
           <td>{a.title}</td>
 
-          <td>
-            <div className="action-buttons">
-              <button
-                className="icon-btn edit-btn"
-                onClick={() => handleEdit(a)}
-              >
-                <Pencil size={18} />
-              </button>
+          {isAdmin && (
+            <td>
+              <div className="action-buttons">
+                <button
+                  className="icon-btn edit-btn"
+                  onClick={() => handleEdit(a)}
+                >
+                  <Pencil size={18} />
+                </button>
 
-              <button
-                className="icon-btn danger-btn"
-                onClick={() => handleDelete(a._id)}
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          </td>
+                <button
+                  className="icon-btn danger-btn"
+                  onClick={() => handleDelete(a._id)}
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            </td>
+          )}
         </tr>
       ))}
 
