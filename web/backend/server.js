@@ -20,6 +20,14 @@ const mqttSubscriber = require('./services/mqttSubscriber')
 // express app
 const app = express()
 
+// Render puts this app behind a reverse proxy, so every request Express sees
+// arrives from that proxy's own connection, not the real client. Without
+// this, req.ip (and anything keyed on it, like express-rate-limit) treats
+// every visitor as the same IP — one person spamming an endpoint locks out
+// everyone else too. Trusting the first hop makes req.ip read the real
+// client IP from X-Forwarded-For instead.
+app.set('trust proxy', 1)
+
 // middleware
 app.use(express.json())
 app.use('/uploads', express.static('uploads'))
