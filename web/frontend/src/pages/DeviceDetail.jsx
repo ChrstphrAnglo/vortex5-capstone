@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../hooks/useAuthContext'
-import { ArrowLeft, Users, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowLeft, Users, ChevronDown, ChevronUp, RotateCcw, Power, Loader2 } from 'lucide-react'
 import AqiDetails from '../components/AqiDetails'
 import RecommendedActions from '../components/RecommendedActions'
 import ShareDeviceModal from '../components/ShareDeviceModal'
@@ -36,34 +36,69 @@ const DeviceDetail = () => {
   const [shareOpen,   setShareOpen]   = useState(false)
   const [sharedCount, setSharedCount] = useState(0)
 
+  // Device controls (admin only) — reset + power, same endpoints Device
+  // Management uses, surfaced here too so an admin doesn't have to leave
+  // the live view to act on the device they're looking at.
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+  const [resetting,        setResetting]        = useState(false)
+  const [powerLoading,     setPowerLoading]      = useState(false)
+
   // ---------- Fetch device + latest AQI ----------
-  useEffect(() => {
+  const fetchData = useCallback(async (isInitial = false) => {
     if (!user) return
-
-    const fetchData = async () => {
-      try {
-        const [devRes, aqiRes] = await Promise.all([
-          fetch('/api/device',      { headers: { Authorization: `Bearer ${user.token}` } }),
-          fetch('/api/aqi/latest',  { headers: { Authorization: `Bearer ${user.token}` } }),
-        ])
-        if (devRes.ok) {
-          const devices = await devRes.json()
-          setDevice(devices.find(x => x.deviceId === deviceId) || null)
-        }
-        if (aqiRes.ok) {
-          const readings = await aqiRes.json()
-          setReading(readings.find(x => x.deviceId === deviceId) || null)
-        }
-        setLastUpdated(new Date())
-      } finally {
-        setLoading(false)
+    try {
+      const [devRes, aqiRes] = await Promise.all([
+        fetch('/api/device',      { headers: { Authorization: `Bearer ${user.token}` } }),
+        fetch('/api/aqi/latest',  { headers: { Authorization: `Bearer ${user.token}` } }),
+      ])
+      if (devRes.ok) {
+        const devices = await devRes.json()
+        setDevice(devices.find(x => x.deviceId === deviceId) || null)
       }
+      if (aqiRes.ok) {
+        const readings = await aqiRes.json()
+        setReading(readings.find(x => x.deviceId === deviceId) || null)
+      }
+      setLastUpdated(new Date())
+    } finally {
+      if (isInitial) setLoading(false)
     }
-
-    fetchData()
-    const iv = setInterval(fetchData, 10000)
-    return () => clearInterval(iv)
   }, [user, deviceId])
+
+  useEffect(() => {
+    fetchData(true)
+    const iv = setInterval(() => fetchData(false), 10000)
+    return () => clearInterval(iv)
+  }, [fetchData])
+
+  // ---------- Reset ----------
+  const confirmReset = async () => {
+    setResetting(true)
+    try {
+      await fetch(`/api/device/${deviceId}/reset`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${user.token}` }
+      })
+    } finally {
+      setResetting(false)
+      setResetConfirmOpen(false)
+    }
+  }
+
+  // ---------- Power ----------
+  const togglePower = async () => {
+    setPowerLoading(true)
+    try {
+      const res = await fetch(`/api/device/${deviceId}/power`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${user.token}` },
+        body: JSON.stringify({ on: !device.enabled })
+      })
+      if (res.ok) await fetchData()
+    } finally {
+      setPowerLoading(false)
+    }
+  }
 
   // ---------- Fetch recent readings (diagnostic table) ----------
   const fetchRecent = useCallback(async () => {
@@ -88,7 +123,7 @@ const DeviceDetail = () => {
   if (!device) {
     return (
       <div className="dash-page">
-        <button className="dash-back-btn" onClick={() => navigate(-1)}>
+        <button className="dash-back-btn" onClick={() => navigate('/')}>
           <ArrowLeft size={18} /> Back
         </button>
         <p style={{ marginTop: 16 }}>Device not found, or you don't have access to it.</p>
@@ -106,7 +141,7 @@ const DeviceDetail = () => {
 
   return (
     <div className="dash-page">
-      <button className="dash-back-btn" onClick={() => navigate(-1)}>
+      <button className="dash-back-btn" onClick={() => navigate('/')}>
         <ArrowLeft size={18} /> Back to devices
       </button>
 
@@ -130,16 +165,37 @@ const DeviceDetail = () => {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {user?.role === 'admin' && (
-            <button
-              className="btn btn-secondary share-header-btn"
-              onClick={() => setShareOpen(true)}
-            >
-              <Users size={15} />
-              Share
-              {sharedCount > 0 && (
-                <span className="share-header-count">{sharedCount}</span>
-              )}
-            </button>
+            <>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setResetConfirmOpen(true)}
+                title="Reset device"
+              >
+                <RotateCcw size={15} />
+                Reset
+              </button>
+
+              <button
+                className="btn btn-secondary"
+                onClick={togglePower}
+                disabled={powerLoading}
+                title={device.enabled ? 'Turn off' : 'Turn on'}
+              >
+                {powerLoading ? <Loader2 size={15} className="share-spinner" /> : <Power size={15} />}
+                {device.enabled ? 'Turn Off' : 'Turn On'}
+              </button>
+
+              <button
+                className="btn btn-secondary share-header-btn"
+                onClick={() => setShareOpen(true)}
+              >
+                <Users size={15} />
+                Share
+                {sharedCount > 0 && (
+                  <span className="share-header-count">{sharedCount}</span>
+                )}
+              </button>
+            </>
           )}
 
           {lastUpdated && (
@@ -244,6 +300,29 @@ const DeviceDetail = () => {
           </div>
         )}
       </div>
+
+      {/* ══ Reset Confirm Modal ══ */}
+      {resetConfirmOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Reset Device</h3>
+            </div>
+            <div className="modal-body">
+              <p>Send a reset command to <strong>{device.name}</strong>?</p>
+              <p className="modal-warning">The device will restart. Live readings will pause briefly.</p>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-secondary" onClick={() => setResetConfirmOpen(false)} disabled={resetting}>
+                Cancel
+              </button>
+              <button className="btn btn-warning" onClick={confirmReset} disabled={resetting}>
+                {resetting ? 'Sending...' : 'Reset Device'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ Share Modal ══ */}
       {shareOpen && (
