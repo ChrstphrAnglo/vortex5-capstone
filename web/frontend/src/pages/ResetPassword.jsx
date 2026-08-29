@@ -4,14 +4,8 @@ import { Eye, EyeOff } from 'lucide-react'
 import { useResetPassword } from '../hooks/useResetPassword'
 import { useForgotPassword } from '../hooks/useForgotPassword'
 import PasswordRequirements from '../components/PasswordRequirements'
+import { isStrongPassword } from '../utils/validators'
 import bewairLogoWhite from '../assets/bewair_logo_white.png'
-
-const isStrongPassword = (password) =>
-  password.length >= 8 &&
-  /[A-Z]/.test(password) &&
-  /[a-z]/.test(password) &&
-  /\d/.test(password) &&
-  /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]/.test(password)
 
 const ResetPassword = () => {
   const location = useLocation()

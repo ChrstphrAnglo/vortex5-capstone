@@ -3,14 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import { useSendSignupCode } from '../hooks/useSendSignupCode'
 import PasswordRequirements from '../components/PasswordRequirements'
+import { isStrongPassword } from '../utils/validators'
 import bewairLogoWhite from '../assets/bewair_logo_white.png'
-
-const isStrongPassword = (password) =>
-  password.length >= 8 &&
-  /[A-Z]/.test(password) &&
-  /[a-z]/.test(password) &&
-  /\d/.test(password) &&
-  /[!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]/.test(password)
 
 // Same lists as the mobile app's registration form — kept identical so
 // Department/Staff Type stay consistent data regardless of which app

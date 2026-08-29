@@ -1,5 +1,6 @@
 const express = require('express')
 const { requireAuth, requireAdmin } = require('../middleware/requireAuth')
+const { emailCodeLimiter } = require('../middleware/rateLimit')
 const uploadImage = require('../middleware/uploadImage')
 const {
     signupUser,
@@ -25,9 +26,9 @@ const router = express.Router()
 
 // Public auth routes
 router.post('/login', loginUser)
-router.post('/signup/send-code', sendSignupCode)
+router.post('/signup/send-code', emailCodeLimiter, sendSignupCode)
 router.post('/signup', signupUser)
-router.post('/forgot-password', forgotPassword)
+router.post('/forgot-password', emailCodeLimiter, forgotPassword)
 router.post('/reset-password', resetPassword)
 
 // Self-service routes (any authenticated user)

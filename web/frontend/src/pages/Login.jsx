@@ -8,12 +8,20 @@ const Login = () => {
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw]     = useState(false)
+  const [localError, setLocalError] = useState(null)
   const { login, error, isLoading } = useLogin()
   const location = useLocation()
   const infoMessage = location.state?.message
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setLocalError(null)
+
+    if (!email || !password) {
+      setLocalError('Please enter your email and password.')
+      return
+    }
+
     await login(email, password)
   }
 
@@ -80,7 +88,7 @@ const Login = () => {
               <Link to="/forgot-password">Forgot password?</Link>
             </p>
 
-            {error && <div className="auth-error">{error}</div>}
+            {(localError || error) && <div className="auth-error">{localError || error}</div>}
 
             <button className="auth-submit" disabled={isLoading}>
               {isLoading ? 'Logging in…' : 'Log in'}

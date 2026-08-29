@@ -55,6 +55,14 @@ const userSchema = new Schema ({
     devices: {
         type: [String],
         default: []
+    },
+    failedLoginAttempts: {
+        type: Number,
+        default: 0
+    },
+    lockedUntil: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true
@@ -91,6 +99,12 @@ userSchema.statics.signup = async function (email, password, firstName, lastName
     return user
 }
 
+// Failed logins allowed before a temporary lockout kicks in, and how long
+// that lockout lasts — mirrors the 5-attempt convention already used for
+// signup/password-reset verification codes elsewhere in this file.
+const MAX_LOGIN_ATTEMPTS = 5
+const LOCKOUT_MS = 15 * 60 * 1000 // 15 minutes
+
 // static login method
 userSchema.statics.login = async function(email, password){
 
@@ -112,13 +126,30 @@ userSchema.statics.login = async function(email, password){
         throw Error('Your account is pending admin approval.')
     }
 
+    if (user.lockedUntil && user.lockedUntil > new Date()) {
+        const minutesLeft = Math.ceil((user.lockedUntil - new Date()) / 60000)
+        throw Error(`Too many failed attempts. Try again in ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'}.`)
+    }
+
     const match = await bcrypt.compare(password, user.password)
 
     if (!match) {
+        user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1
+        if (user.failedLoginAttempts >= MAX_LOGIN_ATTEMPTS) {
+            user.lockedUntil = new Date(Date.now() + LOCKOUT_MS)
+            user.failedLoginAttempts = 0
+        }
+        await user.save()
         throw Error('Incorrect password')
     }
 
-    return user 
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+        user.failedLoginAttempts = 0
+        user.lockedUntil = null
+        await user.save()
+    }
+
+    return user
 }
 
 module.exports = mongoose.model('User', userSchema)

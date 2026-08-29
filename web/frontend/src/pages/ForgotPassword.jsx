@@ -5,11 +5,19 @@ import bewairLogoWhite from '../assets/bewair_logo_white.png'
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState('')
+  const [localError, setLocalError] = useState(null)
   const { forgotPassword, error, isLoading, success } = useForgotPassword()
   const navigate = useNavigate()
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setLocalError(null)
+
+    if (!email) {
+      setLocalError('Please enter your email.')
+      return
+    }
+
     await forgotPassword(email)
   }
 
@@ -55,7 +63,7 @@ const ForgotPassword = () => {
               />
             </div>
 
-            {error && <div className="auth-error">{error}</div>}
+            {(localError || error) && <div className="auth-error">{localError || error}</div>}
 
             <button className="auth-submit" disabled={isLoading}>
               {isLoading ? 'Sending…' : 'Send Code'}
