@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io' show File, HandshakeException, SocketException;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart' show MediaType;
+import 'package:mime/mime.dart' show lookupMimeType;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiUser {
@@ -244,9 +246,21 @@ class UserSession {
     final uri = Uri.parse("$baseUrl$userBasePath/me/picture");
 
     try {
+      // http.MultipartFile.fromPath defaults contentType to
+      // application/octet-stream when not given explicitly — it does NOT
+      // infer it from the file extension. The backend's upload filter only
+      // accepts image/* mimetypes, so without this every picture (no matter
+      // the format) was silently rejected. Look the real mimetype up from
+      // the file so the server sees e.g. image/jpeg instead.
+      final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
+
       final request = http.MultipartRequest("PATCH", uri)
         ..headers["Authorization"] = "Bearer ${u.token}"
-        ..files.add(await http.MultipartFile.fromPath("picture", imageFile.path));
+        ..files.add(await http.MultipartFile.fromPath(
+          "picture",
+          imageFile.path,
+          contentType: MediaType.parse(mimeType),
+        ));
 
       final streamedRes = await request.send().timeout(_standardTimeout);
       final res = await http.Response.fromStream(streamedRes);
