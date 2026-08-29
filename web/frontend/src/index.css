@@ -1125,13 +1125,18 @@ table {
   border-collapse: collapse;
 }
 
+/* Bare fallback for any table without a dedicated class — every real table
+   in the app (.modern-table, .stats-table, .recent-readings-table) styles
+   its own borders (bottom-only, token-colored) and overrides this. Giving
+   this fallback its own hardcoded 1px #ccc border on every side was the
+   actual bug: those classes only override border-bottom, so the other
+   three sides leaked this light-gray-on-any-theme border into every table
+   in the app, showing up as a stark bright grid in dark mode. */
 th, td {
-  border: 1px solid #ccc;
   padding: 8px;
 }
 
 th {
-  background-color: #f0f0f0;
   text-align: left;
 }
 
