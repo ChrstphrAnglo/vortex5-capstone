@@ -968,12 +968,15 @@ const AnalyticsKpi = ({ icon, label, value, hint, sub, accent }) => (
 )
 
 const InsightRow = ({ insight }) => {
+  // Use the app's soft/strong color tokens (already dark-mode-aware) instead
+  // of hardcoded light-mode-only hex — this panel previously went dark-text-
+  // on-dark-background in dark mode, same bug already fixed elsewhere.
   const tone = {
-    good:    { bg: '#dcfce7', fg: '#166534', icon: '✓' },
-    warning: { bg: '#fef3c7', fg: '#92400e', icon: '!' },
-    bad:     { bg: '#fee2e2', fg: '#991b1b', icon: '▲' },
-    neutral: { bg: '#e0e7ff', fg: '#3730a3', icon: 'i' },
-  }[insight.tone] || { bg: '#e2e8f0', fg: '#334155', icon: '•' }
+    good:    { bg: 'var(--color-success-soft)', fg: 'var(--color-success-strong)', icon: '✓' },
+    warning: { bg: 'var(--color-warning-soft)', fg: 'var(--color-warning-strong)', icon: '!' },
+    bad:     { bg: 'var(--color-danger-soft)',  fg: 'var(--color-danger-strong)',  icon: '▲' },
+    neutral: { bg: 'var(--brand-blue-soft)',    fg: 'var(--brand-blue)',           icon: 'i' },
+  }[insight.tone] || { bg: 'var(--color-surface-3)', fg: 'var(--color-text-secondary)', icon: '•' }
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
       <Box sx={{
@@ -1070,7 +1073,12 @@ const CompareBlock = ({ title, current, previous, currentLabel = 'Current', prev
         <Chip
           size="small"
           label={`${worse ? '▲' : '▼'} ${Math.abs(delta)}% ${worse ? 'higher' : 'lower'}`}
-          sx={{ mt: 1.5, bgcolor: worse ? '#fee2e2' : '#dcfce7', color: worse ? '#991b1b' : '#166534', fontWeight: 600 }}
+          sx={{
+            mt: 1.5,
+            bgcolor: worse ? 'var(--color-danger-soft)' : 'var(--color-success-soft)',
+            color: worse ? 'var(--color-danger-strong)' : 'var(--color-success-strong)',
+            fontWeight: 600,
+          }}
         />
       )}
     </Box>
