@@ -28,8 +28,10 @@ import {
   Cpu,
 } from 'lucide-react'
 
-// Import the logo
-import bewAirLogo from '../assets/bewair_logo_black.png'
+// Import both logo variants — the black-ink mark is invisible against the
+// dark sidebar, so it has to swap with the theme.
+import bewAirLogoBlack from '../assets/bewair_logo_black.png'
+import bewAirLogoWhite from '../assets/bewair_logo_white.png'
 
 const Navbar = () => {
   const { user } = useAuthContext()
@@ -58,7 +60,7 @@ const Navbar = () => {
     <div className="sidebar">
       <div className="sidebar-header">
         <div className="logo-container">
-          <img src={bewAirLogo} alt="BewAir Logo" className="sidebar-logo" />
+          <img src={isDark ? bewAirLogoWhite : bewAirLogoBlack} alt="BewAir Logo" className="sidebar-logo" />
           <h2>BewAir</h2>
         </div>
       </div>
