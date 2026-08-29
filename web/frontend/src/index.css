@@ -1702,9 +1702,9 @@ input, select {
   padding: 6px 12px;
   font-family: var(--font-sans);
   color: var(--color-text-primary);
-  border: 1px solid #ccc;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: #fff;
+  background: var(--color-surface);
   cursor: pointer;
   transition: 0.2s;
 }
@@ -1967,10 +1967,11 @@ input, select {
 }
 
 .media-card {
-  background: #ffffff;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--shadow-xs);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -2113,7 +2114,7 @@ input, select {
 /* ================= DEACTIVATED ROW STYLING ================= */
 .row-deactivated {
   opacity: 0.7;
-  background-color: #fef2f2;
+  background-color: var(--color-danger-soft);
 }
 
 /* ================= MODAL MESSAGES ================= */
@@ -3324,12 +3325,12 @@ input, select {
   padding: 12px 14px;
   border-radius: 8px;
   border-left: 4px solid #f59e0b;
-  background: #fffbeb;
+  background: var(--color-warning-soft);
 }
 
 .dash-alert-high {
   border-left-color: #dc2626;
-  background: #fef2f2;
+  background: var(--color-danger-soft);
 }
 
 .dash-alert-head {
@@ -3532,10 +3533,10 @@ input, select {
 
 /* Highlight rows where values look frozen/repeated */
 .reading-frozen td {
-  background: #fffbeb;
-  color: #92400e;
+  background: var(--color-warning-soft);
+  color: var(--color-warning-strong);
 }
-.reading-frozen .reading-time { color: #b45309 !important; }
+.reading-frozen .reading-time { color: var(--color-warning-strong) !important; }
 
 .recent-readings-hint {
   padding: 8px 18px 0;
