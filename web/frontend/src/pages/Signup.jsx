@@ -215,7 +215,7 @@ const Signup = () => {
             <Link to="/login">Log in</Link>
           </p>
           <p className="auth-back-link">
-            <Link to="/landingpage">← Back to Landing Page</Link>
+            <Link to="/">← Back to Landing Page</Link>
           </p>
         </div>
       </div>

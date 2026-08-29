@@ -3,6 +3,7 @@ import { useAuthContext } from './hooks/useAuthContext';
 
 // Pages & components
 import Home from './pages/Home.jsx'
+import LandingPage from './pages/LandingPage.jsx';
 import Login from './pages/Login.jsx';
 import Signup from './pages/Signup.jsx';
 import VerifySignup from './pages/VerifySignup.jsx';
@@ -30,7 +31,9 @@ function AppRoutes() {
   
   // Define public pages that should NOT have Navbar and Header
   const publicPages = ['/login', '/signup', '/verify-signup', '/forgot-password', '/reset-password']
-  const isPublicPage = publicPages.includes(location.pathname)
+  // "/" is the landing page (no app shell) for a logged-out visitor, but
+  // becomes Home (with the shell) once logged in.
+  const isPublicPage = publicPages.includes(location.pathname) || (location.pathname === '/' && !user)
 
   return (
     <>
@@ -43,9 +46,9 @@ function AppRoutes() {
         {!isPublicPage && <Header />}
         <div className='pages'>
           <Routes>
-            <Route 
+            <Route
               path="/"
-              element={user ? <Home /> : <Navigate to="/login" />}
+              element={user ? <Home /> : <LandingPage />}
             />
 
             <Route
