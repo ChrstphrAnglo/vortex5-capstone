@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../hooks/useAuthContext'
-import {
-  Activity, AlertTriangle, Cpu, Users,
-  Megaphone, Settings, BarChart3, X,
-} from 'lucide-react'
+import { Activity, AlertTriangle, Cpu, Users, X } from 'lucide-react'
 import { CATEGORY_COLORS } from '../utils/airQualityGuidance'
 
 // Handles Enter/Space activation for elements that act like buttons but
@@ -185,30 +182,6 @@ const AdminDashboard = () => {
             })}
           </div>
         )}
-      </div>
-
-      {/* Quick Actions */}
-      <div className="dash-actions">
-        <button className="dash-action-btn" onClick={() => navigate('/device-management')}>
-          <Cpu size={18} />
-          Manage Devices
-        </button>
-        <button className="dash-action-btn" onClick={() => navigate('/usermanagement')}>
-          <Users size={18} />
-          Manage Users
-        </button>
-        <button className="dash-action-btn" onClick={() => navigate('/analytics')}>
-          <BarChart3 size={18} />
-          View Analytics
-        </button>
-        <button className="dash-action-btn" onClick={() => navigate('/configuration/Thresholds')}>
-          <Settings size={18} />
-          Settings
-        </button>
-        <button className="dash-action-btn" onClick={() => navigate('/configuration/WebBulletinBoard')}>
-          <Megaphone size={18} />
-          Bulletin Board
-        </button>
       </div>
 
       {/* ============ Modals ============ */}
