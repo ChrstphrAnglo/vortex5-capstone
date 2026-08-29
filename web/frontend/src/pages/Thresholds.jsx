@@ -43,6 +43,10 @@ const Thresholds = () => {
   const [showEditModal, setShowEditModal] = useState(false)
   const [selectedId, setSelectedId] = useState(null)
   const [editData, setEditData] = useState(EMPTY_FORM)
+  const [loadError, setLoadError] = useState('')
+  const [addError, setAddError] = useState('')
+  const [editError, setEditError] = useState('')
+  const [rowError, setRowError] = useState('')
 
   useEffect(() => {
     const fetchThresholds = async () => {
@@ -53,7 +57,7 @@ const Thresholds = () => {
       if (res.ok) {
         setThresholds(json)
       } else {
-        alert(`Failed to load thresholds: ${json.error || 'Unknown error'}`)
+        setLoadError(json.error || 'Failed to load thresholds.')
       }
     }
     fetchThresholds()
@@ -67,6 +71,7 @@ const Thresholds = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    setAddError('')
     const res = await fetch('/api/threshold', {
       method: 'POST',
       headers: {
@@ -81,11 +86,12 @@ const Thresholds = () => {
       setFormData(EMPTY_FORM)
       setShowModal(false)
     } else {
-      alert(`Failed to add threshold: ${json.error || 'Unknown error'}`)
+      setAddError(json.error || 'Failed to add threshold.')
     }
   }
 
   const handleDelete = async (id) => {
+    setRowError('')
     const res = await fetch(`/api/threshold/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${user?.token}` }
@@ -94,7 +100,7 @@ const Thresholds = () => {
       setThresholds(prev => prev.filter(t => t._id !== id))
     } else {
       const json = await res.json().catch(() => ({}))
-      alert(`Failed to delete threshold: ${json.error || 'Unknown error'}`)
+      setRowError(json.error || 'Failed to delete threshold.')
     }
   }
 
@@ -103,10 +109,12 @@ const Thresholds = () => {
     const next = { label: t.label || '' }
     for (const { key } of FIELD_DEFS) next[key] = t[key] ?? ''
     setEditData(next)
+    setEditError('')
     setShowEditModal(true)
   }
 
   const handleUpdate = async () => {
+    setEditError('')
     const res = await fetch(`/api/threshold/${selectedId}`, {
       method: 'PUT',
       headers: {
@@ -121,7 +129,7 @@ const Thresholds = () => {
       setShowEditModal(false)
       setSelectedId(null)
     } else {
-      alert(`Failed to update threshold: ${json.error || 'Unknown error'}`)
+      setEditError(json.error || 'Failed to update threshold.')
     }
   }
 
@@ -130,7 +138,7 @@ const Thresholds = () => {
       {FIELD_DEFS.map(({ key, label }) => (
         <div className="field" key={key}>
           <label>{label}</label>
-          <input type="number" name={key} value={data[key]} onChange={onChange} />
+          <input type="number" name={key} value={data[key]} onChange={onChange} className="search-input" />
         </div>
       ))}
     </div>
@@ -140,37 +148,46 @@ const Thresholds = () => {
     <div className="configuration">
       <div className="section-header">
         <h2 className="page-title">Configure Thresholds</h2>
-        <button className="add-btn" onClick={() => setShowModal(true)}>
+        <button className="add-btn" onClick={() => { setAddError(''); setShowModal(true) }}>
           + Add Threshold
         </button>
       </div>
 
+      {loadError && <p style={{ color: 'red', marginTop: 10 }}>{loadError}</p>}
+      {rowError && <p style={{ color: 'red', marginTop: 10 }}>{rowError}</p>}
+
       {showModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
-            <form onSubmit={handleSubmit} className="threshold-box">
+          <div className="modal-card">
+            <form onSubmit={handleSubmit}>
               <div className="modal-header">
                 <h3>Configure Threshold</h3>
-                <button type="button" className="close-btn" onClick={() => setShowModal(false)}>✕</button>
               </div>
 
-              <div className="label-row">
-                <label>Label</label>
-                <input
-                  type="text"
-                  name="label"
-                  placeholder="e.g. Unhealthy Air"
-                  value={formData.label}
-                  onChange={handleChange}
-                  required
-                />
+              <div className="modal-body">
+                <div className="label-row">
+                  <label>Label</label>
+                  <input
+                    type="text"
+                    name="label"
+                    placeholder="e.g. Unhealthy Air"
+                    value={formData.label}
+                    onChange={handleChange}
+                    required
+                    className="search-input"
+                  />
+                </div>
+
+                {renderFields(formData, handleChange)}
+
+                {addError && <p style={{ color: 'red', marginTop: 10 }}>{addError}</p>}
               </div>
 
-              {renderFields(formData, handleChange)}
-
-              <div className="action-row">
-                <button className="add-btn">Add Threshold</button>
-                <button type="button" className="cancel-btn" onClick={() => setShowModal(false)}>Cancel</button>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary">Add Threshold</button>
               </div>
             </form>
           </div>
@@ -179,32 +196,35 @@ const Thresholds = () => {
 
       {showEditModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
-            <form
-              onSubmit={(e) => { e.preventDefault(); handleUpdate() }}
-              className="threshold-box"
-            >
+          <div className="modal-card">
+            <form onSubmit={(e) => { e.preventDefault(); handleUpdate() }}>
               <div className="modal-header">
                 <h3>Edit Threshold</h3>
-                <button type="button" className="close-btn" onClick={() => setShowEditModal(false)}>✕</button>
               </div>
 
-              <div className="label-row">
-                <label>Label</label>
-                <input
-                  type="text"
-                  name="label"
-                  value={editData.label}
-                  onChange={handleEditChange}
-                  required
-                />
+              <div className="modal-body">
+                <div className="label-row">
+                  <label>Label</label>
+                  <input
+                    type="text"
+                    name="label"
+                    value={editData.label}
+                    onChange={handleEditChange}
+                    required
+                    className="search-input"
+                  />
+                </div>
+
+                {renderFields(editData, handleEditChange)}
+
+                {editError && <p style={{ color: 'red', marginTop: 10 }}>{editError}</p>}
               </div>
 
-              {renderFields(editData, handleEditChange)}
-
-              <div className="action-row">
-                <button className="save-btn">Save Changes</button>
-                <button type="button" className="cancel-btn" onClick={() => setShowEditModal(false)}>Cancel</button>
+              <div className="modal-actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(false)}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary">Save Changes</button>
               </div>
             </form>
           </div>

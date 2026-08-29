@@ -4,25 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useAuthContext } from '../hooks/useAuthContext'
 import { Maximize2, Minimize2, Pause, Play, CalendarDays, Newspaper, ChevronLeft, ChevronRight } from 'lucide-react'
 import bewAirLogo from '../assets/bewair_logo_black.png'
-
-const CATEGORY_COLORS = {
-  'Good': '#16a34a',
-  'Moderate': '#f59e0b',
-  'Unhealthy (SG)': '#ea580c',
-  'Unhealthy': '#dc2626',
-  'Very Unhealthy': '#9333ea',
-  'Hazardous': '#7f1d1d',
-}
-
-function aqiCategory(aqi) {
-  if (aqi == null) return null
-  if (aqi <= 50)  return 'Good'
-  if (aqi <= 100) return 'Moderate'
-  if (aqi <= 150) return 'Unhealthy (SG)'
-  if (aqi <= 200) return 'Unhealthy'
-  if (aqi <= 300) return 'Very Unhealthy'
-  return 'Hazardous'
-}
+import { CATEGORY_COLORS, aqiCategory } from '../utils/airQualityGuidance'
 
 const BulletinBoard = () => {
   const { user } = useAuthContext()

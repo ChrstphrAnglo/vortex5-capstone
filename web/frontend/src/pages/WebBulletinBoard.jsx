@@ -10,6 +10,9 @@ const WebBulletinBoard = () => {
 
   const [videoFile, setVideoFile] = useState(null)
   const [mediaList, setMediaList] = useState([])
+  const [mediaError, setMediaError] = useState('')
+  const [mediaDeleteTarget, setMediaDeleteTarget] = useState(null) // { id, title }
+  const [mediaDeleting, setMediaDeleting] = useState(false)
 
   useEffect(() => {
     const fetchMedia = async () => {
@@ -29,8 +32,8 @@ const WebBulletinBoard = () => {
 
     const handleUpload = async () => {
   if (!videoFile) {
-    alert('Please choose a video file first.')
-    return
+    setMediaError('Please choose a video file first.')
+    return false
   }
 
   const formData = new FormData()
@@ -49,12 +52,14 @@ const WebBulletinBoard = () => {
     if (res.ok) {
       setMediaList(prev => [json, ...prev])
       setVideoFile(null)
-      alert(`Uploaded "${videoFile.name}" successfully.`)
+      return true
     } else {
-      alert(`Upload failed: ${json.error || 'Unknown error'}`)
+      setMediaError(json.error || 'Upload failed.')
+      return false
     }
   } catch (err) {
-    alert(`Upload failed: ${err.message}`)
+    setMediaError(err.message || 'Upload failed.')
+    return false
   }
 }
 const [showMediaModal, setShowMediaModal] = useState(false)
@@ -66,6 +71,9 @@ const [announcements, setAnnouncements] = useState([])
 
 const [showEditModal, setShowEditModal] = useState(false)
 const [selectedId, setSelectedId] = useState(null)
+const [formError, setFormError] = useState('')
+const [editError, setEditError] = useState('')
+const [listError, setListError] = useState('')
 
 const [editData, setEditData] = useState({
   title: '',
@@ -82,9 +90,10 @@ const handleChange = (e) => {
 
 const handleSubmit = async (e) => {
   e.preventDefault()
+  setFormError('')
 
   if (!formData.title || !formData.date) {
-    alert('Title and Date are required')
+    setFormError('Title and date are required.')
     return
   }
 
@@ -109,7 +118,7 @@ const handleSubmit = async (e) => {
       time: ''
     })
   } else {
-    alert(`Failed to add announcement: ${json.error || 'Unknown error'}`)
+    setFormError(json.error || 'Failed to add announcement.')
   }
 }
 const [formData, setFormData] = useState({
@@ -129,6 +138,7 @@ useEffect(() => {
 }, [])
 
 const handleDelete = async (id) => {
+  setListError('')
   const res = await fetch(`/api/announcements/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${user?.token}` }
@@ -138,7 +148,7 @@ const handleDelete = async (id) => {
     setAnnouncements(prev => prev.filter(a => a._id !== id))
   } else {
     const json = await res.json().catch(() => ({}))
-    alert(`Failed to delete announcement: ${json.error || 'Unknown error'}`)
+    setListError(json.error || 'Failed to delete announcement.')
   }
 }
 const handleEdit = (a) => {
@@ -149,6 +159,7 @@ const handleEdit = (a) => {
     date: a.date || '',
     time: a.time || ''
   })
+  setEditError('')
   setShowEditModal(true)
 }
 
@@ -160,6 +171,7 @@ const handleEditChange = (e) => {
 }
 
 const handleUpdate = async () => {
+  setEditError('')
   const res = await fetch(`/api/announcements/${selectedId}`, {
     method: 'PUT',
     headers: {
@@ -178,7 +190,7 @@ const handleUpdate = async () => {
     setShowEditModal(false)
     setSelectedId(null)
   } else {
-    alert(`Failed to update announcement: ${json.error || 'Unknown error'}`)
+    setEditError(json.error || 'Failed to update announcement.')
   }
 }
 
@@ -191,80 +203,80 @@ const handleUpdate = async () => {
 <div className="section-header">
   <h2 className="page-title">Announcements</h2>
   {isAdmin && (
-    <button className="add-btn" onClick={() => setShowModal(true)}>
+    <button className="add-btn" onClick={() => { setFormError(''); setShowModal(true) }}>
       + Add Announcement
     </button>
   )}
 </div>
 
+{listError && <p style={{ color: 'red', marginTop: 10 }}>{listError}</p>}
+
 {showModal && isAdmin && (
   <div className="modal-overlay">
-    <div className="modal-content">
-      <form onSubmit={handleSubmit} className="threshold-box">
+    <div className="modal-card">
+      <form onSubmit={handleSubmit}>
 
         <div className="modal-header">
           <h3>Create Announcement</h3>
-          <button
-            type="button"
-            className="close-btn"
-            onClick={() => setShowModal(false)}
-          >
-            ✕
-          </button>
         </div>
 
-        <div className="label-row">
-          <label>Title</label>
-          <input
-            type="text"
-            name="title"
-            value={formData.title}
-            onChange={handleChange}
-            required
-          />
-        </div>
-
-        <div className="label-row">
-          <label>Description</label>
-          <textarea
-            name="description"
-            value={formData.description}
-            onChange={handleChange}
-          />
-        </div>
-
-        <div className="threshold-grid">
-          <div className="field">
-            <label>Date</label>
+        <div className="modal-body">
+          <div className="label-row">
+            <label>Title</label>
             <input
-              type="date"
-              name="date"
-              value={formData.date}
+              type="text"
+              name="title"
+              value={formData.title}
               onChange={handleChange}
               required
+              className="search-input"
             />
           </div>
 
-          <div className="field">
-            <label>Time</label>
-            <input
-              type="time"
-              name="time"
-              value={formData.time}
+          <div className="label-row">
+            <label>Description</label>
+            <textarea
+              name="description"
+              value={formData.description}
               onChange={handleChange}
+              className="search-input"
+              rows={3}
             />
           </div>
+
+          <div className="threshold-grid">
+            <div className="field">
+              <label>Date</label>
+              <input
+                type="date"
+                name="date"
+                value={formData.date}
+                onChange={handleChange}
+                required
+                className="search-input"
+              />
+            </div>
+
+            <div className="field">
+              <label>Time</label>
+              <input
+                type="time"
+                name="time"
+                value={formData.time}
+                onChange={handleChange}
+                className="search-input"
+              />
+            </div>
+          </div>
+
+          {formError && <p style={{ color: 'red', marginTop: 10 }}>{formError}</p>}
         </div>
 
-        <div className="action-row">
-          <button className="add-btn">Add Announcement</button>
-          <button
-            type="button"
-            className="cancel-btn"
-            onClick={() => setShowModal(false)}
-          >
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
             Cancel
           </button>
+          <button className="btn btn-primary">Add Announcement</button>
         </div>
 
       </form>
@@ -274,77 +286,74 @@ const handleUpdate = async () => {
 
 {showEditModal && isAdmin && (
   <div className="modal-overlay">
-    <div className="modal-content">
+    <div className="modal-card">
       <form
         onSubmit={(e) => {
           e.preventDefault()
           handleUpdate()
         }}
-        className="threshold-box"
       >
 
         <div className="modal-header">
           <h3>Edit Announcement</h3>
-          <button
-            type="button"
-            className="close-btn"
-            onClick={() => setShowEditModal(false)}
-          >
-            ✕
-          </button>
         </div>
 
-        <div className="label-row">
-          <label>Title</label>
-          <input
-            type="text"
-            name="title"
-            value={editData.title}
-            onChange={handleEditChange}
-            required
-          />
-        </div>
-
-        <div className="label-row">
-          <label>Description</label>
-          <textarea
-            name="description"
-            value={editData.description}
-            onChange={handleEditChange}
-          />
-        </div>
-
-        <div className="threshold-grid">
-          <div className="field">
-            <label>Date</label>
+        <div className="modal-body">
+          <div className="label-row">
+            <label>Title</label>
             <input
-              type="date"
-              name="date"
-              value={editData.date}
+              type="text"
+              name="title"
+              value={editData.title}
               onChange={handleEditChange}
+              required
+              className="search-input"
             />
           </div>
 
-          <div className="field">
-            <label>Time</label>
-            <input
-              type="time"
-              name="time"
-              value={editData.time}
+          <div className="label-row">
+            <label>Description</label>
+            <textarea
+              name="description"
+              value={editData.description}
               onChange={handleEditChange}
+              className="search-input"
+              rows={3}
             />
           </div>
+
+          <div className="threshold-grid">
+            <div className="field">
+              <label>Date</label>
+              <input
+                type="date"
+                name="date"
+                value={editData.date}
+                onChange={handleEditChange}
+                className="search-input"
+              />
+            </div>
+
+            <div className="field">
+              <label>Time</label>
+              <input
+                type="time"
+                name="time"
+                value={editData.time}
+                onChange={handleEditChange}
+                className="search-input"
+              />
+            </div>
+          </div>
+
+          {editError && <p style={{ color: 'red', marginTop: 10 }}>{editError}</p>}
         </div>
 
-        <div className="action-row">
-          <button className="save-btn">Save Changes</button>
-          <button
-            type="button"
-            className="cancel-btn"
-            onClick={() => setShowEditModal(false)}
-          >
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(false)}>
             Cancel
           </button>
+          <button className="btn btn-primary">Save Changes</button>
         </div>
 
       </form>
@@ -407,57 +416,49 @@ const handleUpdate = async () => {
   <h2 className="page-title">Educational Media Display</h2>
 
   {isAdmin && (
-    <button className="add-btn" onClick={() => setShowMediaModal(true)}>
+    <button className="add-btn" onClick={() => { setMediaError(''); setShowMediaModal(true) }}>
       + Upload Video
     </button>
   )}
 </div>
 
+{mediaError && <p style={{ color: 'red', marginTop: 10 }}>{mediaError}</p>}
+
 {showMediaModal && isAdmin && (
   <div className="modal-overlay">
-    <div className="modal-content">
+    <div className="modal-card">
       <form
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault()
-
-          if (!videoFile) return
-
-          handleUpload()
-          setShowMediaModal(false)
+          const ok = await handleUpload()
+          if (ok) setShowMediaModal(false)
         }}
-        className="threshold-box"
       >
 
         <div className="modal-header">
           <h3>Upload Video</h3>
-          <button
-            type="button"
-            className="close-btn"
-            onClick={() => setShowMediaModal(false)}
-          >
-            ✕
-          </button>
         </div>
 
-        <div className="label-row">
-          <label>Choose File *</label>
-          <input
-            type="file"
-            accept="video/*"
-            onChange={handleFileChange}
-            required
-          />
+        <div className="modal-body">
+          <div className="label-row">
+            <label>Choose File *</label>
+            <input
+              type="file"
+              accept="video/*"
+              onChange={handleFileChange}
+              required
+              className="search-input"
+            />
+          </div>
+
+          {mediaError && <p style={{ color: 'red', marginTop: 10 }}>{mediaError}</p>}
         </div>
 
-        <div className="action-row">
-          <button className="add-btn">Upload</button>
-          <button
-            type="button"
-            className="cancel-btn"
-            onClick={() => setShowMediaModal(false)}
-          >
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={() => setShowMediaModal(false)}>
             Cancel
           </button>
+          <button className="btn btn-primary">Upload</button>
         </div>
 
       </form>
@@ -478,23 +479,7 @@ const handleUpdate = async () => {
       {isAdmin && (
         <button
           className="danger-media-btn"
-          onClick={async () => {
-            if (!confirm(`Delete "${m.title || 'Untitled'}"?`)) return
-            try {
-              const res = await fetch(`/api/media/${m._id}`, {
-                method: 'DELETE',
-                headers: { Authorization: `Bearer ${user?.token}` },
-              })
-              const json = await res.json()
-              if (!res.ok) {
-                alert(`Delete failed: ${json.error || 'Unknown error'}`)
-                return
-              }
-              setMediaList(prev => prev.filter(x => x._id !== m._id))
-            } catch (err) {
-              alert(`Delete failed: ${err.message}`)
-            }
-          }}
+          onClick={() => { setMediaError(''); setMediaDeleteTarget({ id: m._id, title: m.title || 'Untitled' }) }}
         >
           Delete
         </button>
@@ -502,6 +487,57 @@ const handleUpdate = async () => {
     </div>
   ))}
 </div>
+
+{mediaDeleteTarget && (
+  <div className="modal-overlay">
+    <div className="modal-card">
+      <div className="modal-header">
+        <h3>Delete Video</h3>
+      </div>
+      <div className="modal-body">
+        <p>Are you sure you want to delete <strong>{mediaDeleteTarget.title}</strong>?</p>
+        <p className="modal-warning">This cannot be undone.</p>
+      </div>
+      <div className="modal-actions">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => setMediaDeleteTarget(null)}
+          disabled={mediaDeleting}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={mediaDeleting}
+          onClick={async () => {
+            setMediaDeleting(true)
+            try {
+              const res = await fetch(`/api/media/${mediaDeleteTarget.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${user?.token}` },
+              })
+              const json = await res.json()
+              if (!res.ok) {
+                setMediaError(json.error || 'Delete failed.')
+              } else {
+                setMediaList(prev => prev.filter(x => x._id !== mediaDeleteTarget.id))
+              }
+            } catch (err) {
+              setMediaError(err.message || 'Delete failed.')
+            } finally {
+              setMediaDeleting(false)
+              setMediaDeleteTarget(null)
+            }
+          }}
+        >
+          {mediaDeleting ? 'Deleting...' : 'Delete Video'}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </div>
     )
 }

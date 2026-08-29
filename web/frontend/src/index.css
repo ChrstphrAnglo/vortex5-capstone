@@ -1191,18 +1191,15 @@ input, select {
   font-weight: 500;
 }
 
-.field input {
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  font-size: 0.9rem;
-}
+/* Input styling comes from .search-input (token-based, dark-mode safe) —
+   .field only lays the label+input out vertically. */
 
 /* Label section */
 .label-row {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-bottom: 14px;
 }
 
 .label-row label {
@@ -1211,12 +1208,7 @@ input, select {
   font-weight: 500;
 }
 
-.label-row input {
-  padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px solid #ccc;
-  font-size: 0.9rem;
-}
+/* Input styling comes from .search-input (token-based, dark-mode safe). */
 
 /* Button spacing */
 .add-btn {
@@ -1796,12 +1788,13 @@ input, select {
 }
 
 .modal-card {
-  background: #fff;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 12px;
   width: 400px;
   max-width: 90%;
   padding: 20px;
-  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow-lg);
   animation: fadeIn 0.2s ease;
 }
 
@@ -1815,7 +1808,7 @@ input, select {
 .modal-body {
   margin-top: 10px;
   font-size: 14px;
-  color: #4b5563;
+  color: var(--color-text-secondary);
 }
 
 .modal-body ul {

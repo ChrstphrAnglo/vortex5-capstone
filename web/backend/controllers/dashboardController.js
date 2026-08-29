@@ -58,11 +58,13 @@ const getDashboardSummary = async (req, res) => {
     const onlineCount = enrichedDevices.filter(d => d.status === 'active' || d.status === 'available').length
     const offlineCount = enrichedDevices.length - onlineCount
 
-    // 3. Average AQI across all online devices right now
+    // 3. Average AQI across all online devices right now.
+    // null (not 0) when nothing is reporting — 0 would read as a real
+    // "Good" measurement instead of "no data available".
     const activeReadings = enrichedDevices.filter(d => d.aqi != null).map(d => d.aqi)
     const avgAqi = activeReadings.length > 0
       ? Math.round(activeReadings.reduce((s, v) => s + v, 0) / activeReadings.length)
-      : 0
+      : null
 
     // 4. Current alerts: devices above threshold right now
     //    Pull the most recent threshold doc (or use defaults)
@@ -114,7 +116,7 @@ const getDashboardSummary = async (req, res) => {
         userCount,
         activeAlerts: alerts.length,
         avgAqi,
-        avgCategory: aqiCategory(avgAqi),
+        avgCategory: avgAqi != null ? aqiCategory(avgAqi) : null,
       },
       devices: enrichedDevices,
       alerts,

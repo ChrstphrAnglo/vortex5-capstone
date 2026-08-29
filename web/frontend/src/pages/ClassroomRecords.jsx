@@ -2,30 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../hooks/useAuthContext'
 import { School, ArrowLeft, ChevronRight, Plus, Pencil, Trash2 } from 'lucide-react'
-
-const CATEGORY_COLORS = {
-  'Good': '#16a34a',
-  'Moderate': '#f59e0b',
-  'Unhealthy (SG)': '#ea580c',
-  'Unhealthy': '#dc2626',
-  'Very Unhealthy': '#9333ea',
-  'Hazardous': '#7f1d1d',
-}
+import { CATEGORY_COLORS, aqiCategory } from '../utils/airQualityGuidance'
 
 const STATUS_LABELS = {
   active:    { label: 'Active',   color: '#16a34a', bg: '#dcfce7' },
   available: { label: 'No Data',  color: '#d97706', bg: '#fef3c7' },
   offline:   { label: 'Inactive', color: '#dc2626', bg: '#fee2e2' },
-}
-
-function aqiCategory(aqi) {
-  if (aqi == null) return null
-  if (aqi <= 50)  return 'Good'
-  if (aqi <= 100) return 'Moderate'
-  if (aqi <= 150) return 'Unhealthy (SG)'
-  if (aqi <= 200) return 'Unhealthy'
-  if (aqi <= 300) return 'Very Unhealthy'
-  return 'Hazardous'
 }
 
 const ClassroomRecords = () => {

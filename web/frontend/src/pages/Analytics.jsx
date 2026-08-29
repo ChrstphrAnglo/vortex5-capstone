@@ -30,15 +30,7 @@ import { DataGrid } from '@mui/x-data-grid'
 import { Activity, TrendingUp, TrendingDown, Minus, Clock, ShieldCheck, Download } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
-
-const CATEGORY_COLORS = {
-  'Good': '#16a34a',
-  'Moderate': '#f59e0b',
-  'Unhealthy (SG)': '#ea580c',
-  'Unhealthy': '#dc2626',
-  'Very Unhealthy': '#9333ea',
-  'Hazardous': '#7f1d1d',
-}
+import { CATEGORY_COLORS } from '../utils/airQualityGuidance'
 
 const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 

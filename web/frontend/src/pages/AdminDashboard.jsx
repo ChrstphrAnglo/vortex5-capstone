@@ -5,14 +5,15 @@ import {
   Activity, AlertTriangle, Cpu, Users,
   Megaphone, Settings, BarChart3, X,
 } from 'lucide-react'
+import { CATEGORY_COLORS } from '../utils/airQualityGuidance'
 
-const CATEGORY_COLORS = {
-  'Good': '#16a34a',
-  'Moderate': '#f59e0b',
-  'Unhealthy (SG)': '#ea580c',
-  'Unhealthy': '#dc2626',
-  'Very Unhealthy': '#9333ea',
-  'Hazardous': '#7f1d1d',
+// Handles Enter/Space activation for elements that act like buttons but
+// aren't real <button>s (cards, rows) — keeps them reachable by keyboard.
+const activateOnKey = (onActivate) => (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    onActivate()
+  }
 }
 
 const STATUS_LABELS = {
@@ -121,9 +122,9 @@ const AdminDashboard = () => {
         <KpiTile
           icon={<Activity size={20} />}
           label="Average AQI"
-          value={kpis.avgAqi}
-          sub={kpis.avgCategory}
-          accent={CATEGORY_COLORS[kpis.avgCategory] || '#94a3b8'}
+          value={kpis.avgAqi != null ? kpis.avgAqi : '--'}
+          sub={kpis.avgCategory || 'No data'}
+          accent={kpis.avgCategory ? (CATEGORY_COLORS[kpis.avgCategory] || '#94a3b8') : '#94a3b8'}
         />
       </div>
 
@@ -150,6 +151,9 @@ const AdminDashboard = () => {
                   key={d.deviceId}
                   className="dash-device-card dash-device-card-clickable"
                   onClick={() => navigate(`/device/${d.deviceId}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={activateOnKey(() => navigate(`/device/${d.deviceId}`))}
                 >
                   <div className="dash-device-head">
                     <div>
@@ -185,6 +189,10 @@ const AdminDashboard = () => {
 
       {/* Quick Actions */}
       <div className="dash-actions">
+        <button className="dash-action-btn" onClick={() => navigate('/device-management')}>
+          <Cpu size={18} />
+          Manage Devices
+        </button>
         <button className="dash-action-btn" onClick={() => navigate('/usermanagement')}>
           <Users size={18} />
           Manage Users
@@ -227,6 +235,9 @@ const KpiTile = ({ icon, label, value, sub, accent, onClick }) => (
     className={`dash-kpi ${onClick ? 'dash-kpi-clickable' : ''}`}
     style={{ borderTopColor: accent }}
     onClick={onClick}
+    role={onClick ? 'button' : undefined}
+    tabIndex={onClick ? 0 : undefined}
+    onKeyDown={onClick ? activateOnKey(onClick) : undefined}
   >
     <div className="dash-kpi-icon" style={{ color: accent }}>{icon}</div>
     <div className="dash-kpi-label">{label}</div>
@@ -286,7 +297,13 @@ const DevicesModal = ({ devices, onClose, onSelect }) => {
 const DeviceRow = ({ device, onSelect }) => {
   const status = STATUS_LABELS[device.status] || STATUS_LABELS.offline
   return (
-    <div className="dash-modal-row" onClick={() => onSelect(device.deviceId)}>
+    <div
+      className="dash-modal-row"
+      onClick={() => onSelect(device.deviceId)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={activateOnKey(() => onSelect(device.deviceId))}
+    >
       <div>
         <strong>{device.name}</strong>
         <div className="dash-modal-row-sub">{device.room} · {device.deviceId}</div>
@@ -313,6 +330,9 @@ const AlertsModal = ({ alerts, onClose, onSelect }) => {
               key={i}
               className={`dash-alert dash-alert-${a.severity} dash-alert-clickable`}
               onClick={() => onSelect(a.deviceId)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={activateOnKey(() => onSelect(a.deviceId))}
             >
               <div className="dash-alert-head">
                 <strong>{a.name}</strong>
