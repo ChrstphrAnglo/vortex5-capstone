@@ -3,6 +3,7 @@ const { requireAuth, requireAdmin } = require('../middleware/requireAuth')
 const {
   getMyDevices,
   registerDevice,
+  editDevice,
   shareDevice,
   unshareDevice,
   getDeviceUsers,
@@ -17,6 +18,7 @@ router.use(requireAuth)
 
 router.get('/',                        getMyDevices)
 router.post('/',           requireAdmin, registerDevice)
+router.patch('/:deviceId',        requireAdmin, editDevice)
 router.post('/:deviceId/share',   requireAdmin, shareDevice)
 router.post('/:deviceId/unshare', requireAdmin, unshareDevice)
 router.get('/:deviceId/users',    requireAdmin, getDeviceUsers)

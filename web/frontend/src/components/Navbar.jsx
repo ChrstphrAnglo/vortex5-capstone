@@ -25,6 +25,7 @@ import {
   ChevronDown,
   Sun,
   Moon,
+  Cpu,
 } from 'lucide-react'
 
 // Import the logo
@@ -111,6 +112,11 @@ const Navbar = () => {
                         </div>
                       </div>
                     </div>
+
+                    <NavLink to="/device-management">
+                    <Cpu size={18} />
+                    <span>Device Management</span>
+                    </NavLink>
 
                     <NavLink to="/usermanagement">
                     <Users size={18} />

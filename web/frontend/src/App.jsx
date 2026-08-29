@@ -14,6 +14,7 @@ import Auditlog from './pages/Auditlog.jsx'
 import Navbar from './components/Navbar.jsx'
 import Header from './components/Header.jsx';
 import UserManagement from './pages/UserManagement.jsx';
+import DeviceManagement from './pages/DeviceManagement.jsx';
 import ClassroomRecords from './pages/ClassroomRecords.jsx';
 import AlertsAndNotifications from './pages/AlertsAndNotifications.jsx';
 import ConnectSensor from './pages/ConnectSensor.jsx';
@@ -116,6 +117,11 @@ function AppRoutes() {
             <Route
               path="/usermanagement"
               element={user ? <UserManagement /> : <Navigate to="/login" />}
+            />
+
+            <Route
+              path="/device-management"
+              element={user ? <DeviceManagement /> : <Navigate to="/login" />}
             />
 
             <Route

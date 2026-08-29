@@ -2,6 +2,7 @@ const Device = require('../models/DeviceModel')
 const User = require('../models/userModel')
 const mqttSubscriber = require('../services/mqttSubscriber')
 const getVisibleDeviceIds = require('../utils/visibleDevices')
+const logAudit = require('../utils/logAudit')
 
 // GET /api/device — returns only devices the logged-in user has access to
 const getMyDevices = async (req, res) => {
@@ -32,6 +33,42 @@ const registerDevice = async (req, res) => {
       { _id: req.user._id },
       { $addToSet: { devices: deviceId } }
     )
+
+    logAudit({
+      module: 'Device',
+      action: `${req.user.email} registered device "${device.name}" (${deviceId})`,
+      user: req.user.email,
+    })
+
+    res.status(200).json(device)
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+}
+
+// PATCH /api/device/:deviceId — admin-only: rename a device or move it to a
+// different room. deviceId itself is immutable (it's the hardware's identity).
+const editDevice = async (req, res) => {
+  const { deviceId } = req.params
+  const { name, room } = req.body
+  if (!name && !room) {
+    return res.status(400).json({ error: 'name or room is required' })
+  }
+
+  try {
+    const device = await Device.findOne({ deviceId })
+    if (!device) return res.status(404).json({ error: 'device not found' })
+
+    if (name) device.name = name
+    if (room) device.room = room
+    await device.save()
+
+    logAudit({
+      module: 'Device',
+      action: `${req.user.email} updated device ${deviceId} (${device.name}, ${device.room})`,
+      user: req.user.email,
+    })
+
     res.status(200).json(device)
   } catch (error) {
     res.status(400).json({ error: error.message })
@@ -61,6 +98,13 @@ const shareDevice = async (req, res) => {
       { _id: target._id },
       { $addToSet: { devices: deviceId } }
     )
+
+    logAudit({
+      module: 'Device',
+      action: `${req.user.email} shared device ${deviceId} with ${target.email}`,
+      user: req.user.email,
+    })
+
     res.status(200).json({
       ok: true,
       message: `${deviceId} shared with ${target.firstName} ${target.lastName}`
@@ -85,6 +129,13 @@ const unshareDevice = async (req, res) => {
       { _id: target._id },
       { $pull: { devices: deviceId } }
     )
+
+    logAudit({
+      module: 'Device',
+      action: `${req.user.email} revoked ${target.email}'s access to device ${deviceId}`,
+      user: req.user.email,
+    })
+
     res.status(200).json({ ok: true, message: `Access revoked for ${target.email}` })
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -111,6 +162,13 @@ const deleteDevice = async (req, res) => {
     const device = await Device.findOneAndDelete({ deviceId })
     if (!device) return res.status(404).json({ error: 'device not found' })
     await User.updateMany({}, { $pull: { devices: deviceId } })
+
+    logAudit({
+      module: 'Device',
+      action: `${req.user.email} deleted device "${device.name}" (${deviceId})`,
+      user: req.user.email,
+    })
+
     res.status(200).json(device)
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -124,6 +182,13 @@ const resetDevice = async (req, res) => {
     const device = await Device.findOne({ deviceId })
     if (!device) return res.status(404).json({ error: 'device not found' })
     await mqttSubscriber.publishCommand(deviceId, 'reset')
+
+    logAudit({
+      module: 'Device',
+      action: `${req.user.email} reset device ${deviceId}`,
+      user: req.user.email,
+    })
+
     res.status(200).json({ ok: true, message: `reset command sent to ${deviceId}` })
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -145,6 +210,13 @@ const setDevicePower = async (req, res) => {
     await mqttSubscriber.publishCommand(deviceId, on ? 'on' : 'off')
     device.enabled = on
     await device.save()
+
+    logAudit({
+      module: 'Device',
+      action: `${req.user.email} turned device ${deviceId} ${on ? 'on' : 'off'}`,
+      user: req.user.email,
+    })
+
     res.status(200).json({ ok: true, enabled: on, message: `${deviceId} turned ${on ? 'on' : 'off'}` })
   } catch (error) {
     res.status(500).json({ error: error.message })
@@ -154,6 +226,7 @@ const setDevicePower = async (req, res) => {
 module.exports = {
   getMyDevices,
   registerDevice,
+  editDevice,
   shareDevice,
   unshareDevice,
   getDeviceUsers,
