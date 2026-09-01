@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -27,6 +28,13 @@ class _HomePageState extends State<HomePage> {
   int _index = 0;
   bool _refreshing = false;
 
+  // Forgetting Wi-Fi is fire-and-forget over MQTT — the backend has no way
+  // to confirm the device actually rebooted, so this is honest "the command
+  // was sent, the device should be restarting" feedback, not a true
+  // completion signal. Cleared automatically after a short window.
+  String? _resettingId;
+  Timer? _resettingTimer;
+
   /// 'all' = show every sensor, otherwise the room name to focus on.
   String _selectedRoom = 'all';
 
@@ -41,6 +49,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     widget.appState.removeListener(_handleStateChange);
     _pageController.dispose();
+    _resettingTimer?.cancel();
     super.dispose();
   }
 
@@ -130,8 +139,20 @@ class _HomePageState extends State<HomePage> {
     final messenger = ScaffoldMessenger.of(context);
     final error = await widget.appState.resetDevice(s.id);
     if (!mounted) return;
+
+    if (error == null) {
+      // No real "done" signal exists for this (fire-and-forget MQTT command),
+      // so just hold a "Forgetting Wi-Fi..." state on the AQI display for a
+      // fixed window rather than claiming to know when it actually finishes.
+      _resettingTimer?.cancel();
+      setState(() => _resettingId = s.id);
+      _resettingTimer = Timer(const Duration(seconds: 15), () {
+        if (mounted) setState(() => _resettingId = null);
+      });
+    }
+
     messenger.showSnackBar(
-      SnackBar(content: Text(error ?? 'Reset command sent to ${s.name}.')),
+      SnackBar(content: Text(error ?? 'Forgetting Wi-Fi on ${s.name}...')),
     );
   }
 
@@ -256,8 +277,8 @@ class _HomePageState extends State<HomePage> {
               const PopupMenuItem(
                 value: 'reset',
                 child: ListTile(
-                  leading: Icon(Icons.restart_alt, color: Colors.orange),
-                  title: Text('Reset Device'),
+                  leading: Icon(Icons.wifi_off, color: Colors.orange),
+                  title: Text('Forget Wi-Fi'),
                   contentPadding: EdgeInsets.zero,
                 ),
               ),
@@ -384,6 +405,7 @@ class _HomePageState extends State<HomePage> {
                       sensor: sensors[i],
                       reading: widget.appState.readingFor(sensors[i].id),
                       threshold: widget.appState.aqiThreshold,
+                      resetting: _resettingId == sensors[i].id,
                     ),
                   ],
                 ),
@@ -451,11 +473,13 @@ class _SensorPanel extends StatelessWidget {
   final SensorDevice sensor;
   final SensorReadings? reading;
   final double threshold;
+  final bool resetting;
 
   const _SensorPanel({
     required this.sensor,
     required this.reading,
     required this.threshold,
+    this.resetting = false,
   });
 
   @override
@@ -509,33 +533,60 @@ class _SensorPanel extends StatelessWidget {
                   painter: _GaugePainter(aqi: aqi, hasData: hasReading),
                 ),
               ),
-              // centered value
+              // centered value — replaced with a spinner while a "forget
+              // Wi-Fi" command was just sent, since the reading will be
+              // stale/meaningless until the device finishes reconnecting.
               Align(
                 alignment: const Alignment(0, 0.55),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      isOff ? '—' : (hasReading ? '$aqi' : '--'),
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 46,
-                        fontWeight: FontWeight.w800,
-                        height: 1,
+                child: resetting
+                    ? const Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Color(0xFFD97706),
+                            ),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Forgetting\nWi-Fi...',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFFD97706),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isOff ? '—' : (hasReading ? '$aqi' : '--'),
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 46,
+                              fontWeight: FontWeight.w800,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'AQI',
+                            style: TextStyle(
+                              color: Color(0xFF64748B),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.5,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'AQI',
-                      style: TextStyle(
-                        color: Color(0xFF64748B),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),
@@ -544,9 +595,11 @@ class _SensorPanel extends StatelessWidget {
 
         // Category word
         Text(
-          isOff
-              ? 'Device Off'
-              : (hasReading ? reading!.aqiLabel : 'No Data'),
+          resetting
+              ? 'Forgetting Wi-Fi'
+              : isOff
+                  ? 'Device Off'
+                  : (hasReading ? reading!.aqiLabel : 'No Data'),
           style: TextStyle(
             color: color,
             fontSize: 32,

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../hooks/useAuthContext'
-import { Pencil, Power, RotateCcw, Trash2, Users, Loader2 } from 'lucide-react'
+import { Pencil, Power, WifiOff, Trash2, Users, Loader2 } from 'lucide-react'
 import ShareDeviceModal from '../components/ShareDeviceModal'
 
 const DEVICES_PER_PAGE = 10
@@ -27,7 +27,7 @@ const DeviceManagement = () => {
   const [editError, setEditError] = useState('')
   const [editing, setEditing] = useState(false)
 
-  const [resetTarget, setResetTarget] = useState(null) // deviceId
+  const [resetTarget, setResetTarget] = useState(null) // { deviceId, name }
   const [resetting, setResetting] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState(null) // deviceId
@@ -149,17 +149,17 @@ const DeviceManagement = () => {
     }
   }
 
-  // ================= RESET DEVICE =================
+  // ================= FORGET WI-FI =================
   const confirmReset = async () => {
     setResetting(true)
     try {
-      const res = await fetch(`/api/device/${resetTarget}/reset`, {
+      const res = await fetch(`/api/device/${resetTarget.deviceId}/reset`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${user.token}` }
       })
       const json = await res.json()
       setResetTarget(null)
-      if (res.ok) flashSuccess(json.message || 'Reset command sent.')
+      if (res.ok) flashSuccess(json.message || 'Forgetting Wi-Fi...')
     } finally {
       setResetting(false)
     }
@@ -275,8 +275,8 @@ const DeviceManagement = () => {
                     <button className="icon-btn view-btn" title="Edit device" onClick={() => openEdit(d)}>
                       <Pencil size={16} />
                     </button>
-                    <button className="icon-btn deactivate-btn" title="Reset device" onClick={() => setResetTarget(d.deviceId)}>
-                      <RotateCcw size={16} />
+                    <button className="icon-btn deactivate-btn" title="Forget Wi-Fi" onClick={() => setResetTarget({ deviceId: d.deviceId, name: d.name })}>
+                      <WifiOff size={16} />
                     </button>
                     <button
                       className="icon-btn"
@@ -394,21 +394,24 @@ const DeviceManagement = () => {
         </div>
       )}
 
-      {/* RESET CONFIRM MODAL */}
+      {/* FORGET WI-FI CONFIRM MODAL */}
       {resetTarget && (
         <div className="modal-overlay">
           <div className="modal-card">
-            <div className="modal-header"><h3>Reset Device</h3></div>
+            <div className="modal-header"><h3>Forget Wi-Fi?</h3></div>
             <div className="modal-body">
-              <p>Send a reset command to <strong>{resetTarget}</strong>?</p>
-              <p className="modal-warning">The device will restart. Live readings will pause briefly.</p>
+              <p>Erase the saved Wi-Fi password on <strong>{resetTarget.name}</strong>?</p>
+              <p className="modal-warning">
+                It will take the device offline and it will need to be re-provisioned
+                with a network before it reports data again.
+              </p>
             </div>
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setResetTarget(null)} disabled={resetting}>
                 Cancel
               </button>
               <button className="btn btn-warning" onClick={confirmReset} disabled={resetting}>
-                {resetting ? 'Sending...' : 'Reset Device'}
+                {resetting ? 'Sending...' : 'Forget Wi-Fi'}
               </button>
             </div>
           </div>

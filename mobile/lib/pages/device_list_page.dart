@@ -60,7 +60,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
     if (!mounted) return;
     setState(() => _busy.remove(s.id));
     messenger.showSnackBar(
-      SnackBar(content: Text(error ?? 'Reset command sent to ${s.name}.')),
+      SnackBar(content: Text(error ?? 'Forgetting Wi-Fi on ${s.name}...')),
     );
   }
 
@@ -264,11 +264,11 @@ class _DeviceListPageState extends State<DeviceListPage> {
                 color: isOff ? const Color(0xFF15803D) : const Color(0xFFDC2626),
               ),
             ),
-            // Reset
+            // Forget Wi-Fi
             IconButton(
-              tooltip: 'Reset',
+              tooltip: 'Forget Wi-Fi',
               onPressed: () => _confirmReset(s),
-              icon: const Icon(Icons.restart_alt, color: Color(0xFFD97706)),
+              icon: const Icon(Icons.wifi_off, color: Color(0xFFD97706)),
             ),
             // Share
             IconButton(

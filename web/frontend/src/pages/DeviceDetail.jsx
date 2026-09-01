@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuthContext } from '../hooks/useAuthContext'
-import { ArrowLeft, Users, ChevronDown, ChevronUp, RotateCcw, Power, Loader2 } from 'lucide-react'
+import { ArrowLeft, Users, ChevronDown, ChevronUp, WifiOff, Power, Loader2 } from 'lucide-react'
 import AqiDetails from '../components/AqiDetails'
 import RecommendedActions from '../components/RecommendedActions'
 import ShareDeviceModal from '../components/ShareDeviceModal'
@@ -42,6 +42,11 @@ const DeviceDetail = () => {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [resetting,        setResetting]        = useState(false)
   const [powerLoading,     setPowerLoading]      = useState(false)
+  // Forgetting Wi-Fi is fire-and-forget over MQTT — there's no way to confirm
+  // the device actually rebooted, so this just holds an honest "command was
+  // sent, device should be restarting" state for a bit rather than claiming
+  // to know when it actually finishes.
+  const [justReset,        setJustReset]         = useState(false)
 
   // ---------- Fetch device + latest AQI ----------
   const fetchData = useCallback(async (isInitial = false) => {
@@ -75,10 +80,14 @@ const DeviceDetail = () => {
   const confirmReset = async () => {
     setResetting(true)
     try {
-      await fetch(`/api/device/${deviceId}/reset`, {
+      const res = await fetch(`/api/device/${deviceId}/reset`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${user.token}` }
       })
+      if (res.ok) {
+        setJustReset(true)
+        setTimeout(() => setJustReset(false), 15000)
+      }
     } finally {
       setResetting(false)
       setResetConfirmOpen(false)
@@ -169,10 +178,11 @@ const DeviceDetail = () => {
               <button
                 className="btn btn-secondary"
                 onClick={() => setResetConfirmOpen(true)}
-                title="Reset device"
+                disabled={justReset}
+                title="Forget Wi-Fi"
               >
-                <RotateCcw size={15} />
-                Reset
+                {justReset ? <Loader2 size={15} className="share-spinner" /> : <WifiOff size={15} />}
+                {justReset ? 'Forgetting...' : 'Forget Wi-Fi'}
               </button>
 
               <button
@@ -212,13 +222,28 @@ const DeviceDetail = () => {
       </div>
 
       {/* ── Data (always shown; stale readings remain visible) ── */}
-      <AqiDetails
-        aqi={displayReading || {
-          Aqi: null, Temperature: null, Humidity: null,
-          PM1: null, PM25: null, PM10: null,
-          TVOC: null, CO2: null, Formaldehyde: null,
-        }}
-      />
+      <div style={{ position: 'relative' }}>
+        <AqiDetails
+          aqi={displayReading || {
+            Aqi: null, Temperature: null, Humidity: null,
+            PM1: null, PM25: null, PM10: null,
+            TVOC: null, CO2: null, Formaldehyde: null,
+          }}
+        />
+        {justReset && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(1px)',
+            borderRadius: 12,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            gap: 10, color: 'white',
+          }}>
+            <Loader2 size={28} className="share-spinner" />
+            <div style={{ fontWeight: 700, fontSize: 14 }}>Forgetting Wi-Fi...</div>
+            <div style={{ fontSize: 12, opacity: 0.85 }}>Device is restarting and will need to be re-provisioned.</div>
+          </div>
+        )}
+      </div>
 
       {isOnline && <RecommendedActions reading={displayReading} />}
 
@@ -301,23 +326,26 @@ const DeviceDetail = () => {
         )}
       </div>
 
-      {/* ══ Reset Confirm Modal ══ */}
+      {/* ══ Forget Wi-Fi Confirm Modal ══ */}
       {resetConfirmOpen && (
         <div className="modal-overlay">
           <div className="modal-card">
             <div className="modal-header">
-              <h3>Reset Device</h3>
+              <h3>Forget Wi-Fi?</h3>
             </div>
             <div className="modal-body">
-              <p>Send a reset command to <strong>{device.name}</strong>?</p>
-              <p className="modal-warning">The device will restart. Live readings will pause briefly.</p>
+              <p>Erase the saved Wi-Fi password on <strong>{device.name}</strong>?</p>
+              <p className="modal-warning">
+                It will take the device offline and it will need to be re-provisioned
+                with a network before it reports data again.
+              </p>
             </div>
             <div className="modal-actions">
               <button className="btn btn-secondary" onClick={() => setResetConfirmOpen(false)} disabled={resetting}>
                 Cancel
               </button>
               <button className="btn btn-warning" onClick={confirmReset} disabled={resetting}>
-                {resetting ? 'Sending...' : 'Reset Device'}
+                {resetting ? 'Sending...' : 'Forget Wi-Fi'}
               </button>
             </div>
           </div>

@@ -5,17 +5,23 @@ import 'package:http/http.dart' as http;
 import 'package:vortex5_application_2/models/sensor_device.dart';
 import 'package:vortex5_application_2/models/user_session.dart';
 
-/// Shared "Reset Device?" confirmation — previously duplicated identically
+/// Shared "Forget Wi-Fi?" confirmation — previously duplicated identically
 /// in home_page.dart and device_list_page.dart. Handles the offline
 /// pre-check and the confirmation dialog only; each caller keeps its own
 /// post-confirmation busy-state/snackbar handling, which differs slightly
 /// per page.
+///
+/// Named "Forget Wi-Fi" rather than "Reset" because that's precisely what
+/// it does — wipes the saved network password and drops the device back
+/// into setup mode — and "Reset" alone reads as ambiguous (restart? clear
+/// an error? factory reset everything?), which undersold how disruptive
+/// this action actually is.
 Future<bool> confirmResetDevice(BuildContext context, SensorDevice device) async {
   if (device.status == SensorStatus.offline) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
-          'Device must be online to receive a reset command. '
+          'Device must be online to receive this command. '
           'Use the BOOT button on the ESP32 instead.',
         ),
       ),
@@ -26,10 +32,11 @@ Future<bool> confirmResetDevice(BuildContext context, SensorDevice device) async
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Reset Device?'),
+      title: const Text('Forget Wi-Fi?'),
       content: Text(
-        'This will wipe the Wi-Fi credentials on ${device.name} and put it back '
-        'into provisioning mode. It will need to be re-provisioned.',
+        'This will erase the saved Wi-Fi password on ${device.name} and take it '
+        'offline. It will need to be re-provisioned with a network before it '
+        'reports data again.',
       ),
       actions: [
         TextButton(
@@ -38,7 +45,7 @@ Future<bool> confirmResetDevice(BuildContext context, SensorDevice device) async
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, true),
-          child: const Text('Reset', style: TextStyle(color: Colors.orange)),
+          child: const Text('Forget Wi-Fi', style: TextStyle(color: Colors.orange)),
         ),
       ],
     ),
