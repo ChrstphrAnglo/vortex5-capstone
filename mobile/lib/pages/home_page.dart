@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -28,12 +27,13 @@ class _HomePageState extends State<HomePage> {
   int _index = 0;
   bool _refreshing = false;
 
-  // Forgetting Wi-Fi is fire-and-forget over MQTT — the backend has no way
-  // to confirm the device actually rebooted, so this is honest "the command
-  // was sent, the device should be restarting" feedback, not a true
-  // completion signal. Cleared automatically after a short window.
-  String? _resettingId;
-  Timer? _resettingTimer;
+  // Forgetting Wi-Fi is fire-and-forget over MQTT — there's no signal for
+  // when the device actually finishes rebooting. Rather than guess with a
+  // timer, remember when the command was confirmed per device and treat any
+  // reading older than that moment as stale/gone — the panel falls through
+  // to its existing "No Data" state immediately and only shows numbers
+  // again once a genuinely new reading proves the device is back.
+  final Map<String, DateTime> _resetAtByDevice = {};
 
   /// 'all' = show every sensor, otherwise the room name to focus on.
   String _selectedRoom = 'all';
@@ -49,7 +49,6 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     widget.appState.removeListener(_handleStateChange);
     _pageController.dispose();
-    _resettingTimer?.cancel();
     super.dispose();
   }
 
@@ -141,14 +140,10 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) return;
 
     if (error == null) {
-      // No real "done" signal exists for this (fire-and-forget MQTT command),
-      // so just hold a "Forgetting Wi-Fi..." state on the AQI display for a
-      // fixed window rather than claiming to know when it actually finishes.
-      _resettingTimer?.cancel();
-      setState(() => _resettingId = s.id);
-      _resettingTimer = Timer(const Duration(seconds: 15), () {
-        if (mounted) setState(() => _resettingId = null);
-      });
+      // Any reading from before this moment is no longer trustworthy — the
+      // panel will fall through to "No Data" immediately and only show
+      // numbers again once a genuinely new reading arrives.
+      setState(() => _resetAtByDevice[s.id] = DateTime.now());
     }
 
     messenger.showSnackBar(
@@ -395,6 +390,15 @@ class _HomePageState extends State<HomePage> {
               setState(() {});
             },
             itemBuilder: (ctx, i) {
+              final sensor = sensors[i];
+              final rawReading = widget.appState.readingFor(sensor.id);
+              final resetAt = _resetAtByDevice[sensor.id];
+              // A reading from before the last "Forget Wi-Fi" isn't
+              // trustworthy — treat it as if it doesn't exist.
+              final effectiveReading =
+                  (resetAt != null && rawReading != null && !rawReading.updatedAt.isAfter(resetAt))
+                      ? null
+                      : rawReading;
               return RefreshIndicator(
                 onRefresh: _refresh,
                 child: ListView(
@@ -402,10 +406,9 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                   children: [
                     _SensorPanel(
-                      sensor: sensors[i],
-                      reading: widget.appState.readingFor(sensors[i].id),
+                      sensor: sensor,
+                      reading: effectiveReading,
                       threshold: widget.appState.aqiThreshold,
-                      resetting: _resettingId == sensors[i].id,
                     ),
                   ],
                 ),
@@ -473,19 +476,22 @@ class _SensorPanel extends StatelessWidget {
   final SensorDevice sensor;
   final SensorReadings? reading;
   final double threshold;
-  final bool resetting;
 
   const _SensorPanel({
     required this.sensor,
     required this.reading,
     required this.threshold,
-    this.resetting = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final isOff = !sensor.enabled;
-    final hasReading = reading != null && !isOff;
+    // Require the device to actually be online too, not just have some
+    // previously-fetched reading sitting around — otherwise a sensor that
+    // lost power or Wi-Fi (reset or not) keeps showing its last numbers
+    // as if they were still live.
+    final hasReading =
+        reading != null && !isOff && sensor.status != SensorStatus.offline;
     final aqi = reading?.aqi ?? 0;
     final color = !hasReading ? const Color(0xFF94A3B8) : aqiColorFor(aqi);
 
@@ -533,60 +539,33 @@ class _SensorPanel extends StatelessWidget {
                   painter: _GaugePainter(aqi: aqi, hasData: hasReading),
                 ),
               ),
-              // centered value — replaced with a spinner while a "forget
-              // Wi-Fi" command was just sent, since the reading will be
-              // stale/meaningless until the device finishes reconnecting.
+              // centered value
               Align(
                 alignment: const Alignment(0, 0.55),
-                child: resetting
-                    ? const Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            width: 28,
-                            height: 28,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Color(0xFFD97706),
-                            ),
-                          ),
-                          SizedBox(height: 8),
-                          Text(
-                            'Forgetting\nWi-Fi...',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Color(0xFFD97706),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            isOff ? '—' : (hasReading ? '$aqi' : '--'),
-                            style: TextStyle(
-                              color: color,
-                              fontSize: 46,
-                              fontWeight: FontWeight.w800,
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          const Text(
-                            'AQI',
-                            style: TextStyle(
-                              color: Color(0xFF64748B),
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.5,
-                            ),
-                          ),
-                        ],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isOff ? '—' : (hasReading ? '$aqi' : '--'),
+                      style: TextStyle(
+                        color: color,
+                        fontSize: 46,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
                       ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'AQI',
+                      style: TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -595,11 +574,9 @@ class _SensorPanel extends StatelessWidget {
 
         // Category word
         Text(
-          resetting
-              ? 'Forgetting Wi-Fi'
-              : isOff
-                  ? 'Device Off'
-                  : (hasReading ? reading!.aqiLabel : 'No Data'),
+          isOff
+              ? 'Device Off'
+              : (hasReading ? reading!.aqiLabel : 'No Data'),
           style: TextStyle(
             color: color,
             fontSize: 32,

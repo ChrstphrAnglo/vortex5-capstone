@@ -42,11 +42,13 @@ const DeviceDetail = () => {
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [resetting,        setResetting]        = useState(false)
   const [powerLoading,     setPowerLoading]      = useState(false)
-  // Forgetting Wi-Fi is fire-and-forget over MQTT — there's no way to confirm
-  // the device actually rebooted, so this just holds an honest "command was
-  // sent, device should be restarting" state for a bit rather than claiming
-  // to know when it actually finishes.
-  const [justReset,        setJustReset]         = useState(false)
+  // Forgetting Wi-Fi is fire-and-forget over MQTT — there's no signal for
+  // when the device actually finishes rebooting. Rather than guess with a
+  // timer, remember when the command was confirmed and treat any reading
+  // older than that moment as stale/gone — the page falls through to its
+  // existing "no data" state immediately and only shows numbers again once
+  // a genuinely new reading proves the device is back.
+  const [resetAt, setResetAt] = useState(null)
 
   // ---------- Fetch device + latest AQI ----------
   const fetchData = useCallback(async (isInitial = false) => {
@@ -84,10 +86,7 @@ const DeviceDetail = () => {
         method: 'POST',
         headers: { Authorization: `Bearer ${user.token}` }
       })
-      if (res.ok) {
-        setJustReset(true)
-        setTimeout(() => setJustReset(false), 15000)
-      }
+      if (res.ok) setResetAt(new Date())
     } finally {
       setResetting(false)
       setResetConfirmOpen(false)
@@ -140,13 +139,18 @@ const DeviceDetail = () => {
     )
   }
 
+  // A reading from before the last "Forget Wi-Fi" isn't trustworthy — treat
+  // it as if it doesn't exist until a genuinely new one arrives.
+  const effectiveReading =
+    resetAt && reading && new Date(reading.createdAt) < resetAt ? null : reading
+
   // Determine freshness of the last reading
-  const lastReadingAt = reading?.createdAt
+  const lastReadingAt = effectiveReading?.createdAt
   const isStale = !lastReadingAt || (Date.now() - new Date(lastReadingAt).getTime()) > STALE_MS
   const isOnline = device.status === 'online' && !isStale
 
   // Always show last known data — just mark it visually if stale
-  const displayReading = reading || null
+  const displayReading = effectiveReading || null
 
   return (
     <div className="dash-page">
@@ -178,11 +182,10 @@ const DeviceDetail = () => {
               <button
                 className="btn btn-secondary"
                 onClick={() => setResetConfirmOpen(true)}
-                disabled={justReset}
                 title="Forget Wi-Fi"
               >
-                {justReset ? <Loader2 size={15} className="share-spinner" /> : <WifiOff size={15} />}
-                {justReset ? 'Forgetting...' : 'Forget Wi-Fi'}
+                <WifiOff size={15} />
+                Forget Wi-Fi
               </button>
 
               <button
@@ -222,28 +225,13 @@ const DeviceDetail = () => {
       </div>
 
       {/* ── Data (always shown; stale readings remain visible) ── */}
-      <div style={{ position: 'relative' }}>
-        <AqiDetails
-          aqi={displayReading || {
-            Aqi: null, Temperature: null, Humidity: null,
-            PM1: null, PM25: null, PM10: null,
-            TVOC: null, CO2: null, Formaldehyde: null,
-          }}
-        />
-        {justReset && (
-          <div style={{
-            position: 'absolute', inset: 0,
-            background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(1px)',
-            borderRadius: 12,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 10, color: 'white',
-          }}>
-            <Loader2 size={28} className="share-spinner" />
-            <div style={{ fontWeight: 700, fontSize: 14 }}>Forgetting Wi-Fi...</div>
-            <div style={{ fontSize: 12, opacity: 0.85 }}>Device is restarting and will need to be re-provisioned.</div>
-          </div>
-        )}
-      </div>
+      <AqiDetails
+        aqi={displayReading || {
+          Aqi: null, Temperature: null, Humidity: null,
+          PM1: null, PM25: null, PM10: null,
+          TVOC: null, CO2: null, Formaldehyde: null,
+        }}
+      />
 
       {isOnline && <RecommendedActions reading={displayReading} />}
 
