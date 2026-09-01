@@ -4032,6 +4032,8 @@ input, select {
   height: 80px;
   border-radius: 50%;
   background: linear-gradient(135deg, #4f83ff, #8b2cf5);
+  background-size: cover;
+  background-position: center;
   color: white;
   display: flex;
   align-items: center;
@@ -4039,6 +4041,36 @@ input, select {
   font-size: 28px;
   font-weight: 800;
   flex-shrink: 0;
+}
+
+.profile-avatar-btn {
+  position: relative;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.profile-avatar-btn:disabled {
+  cursor: default;
+}
+
+.profile-avatar-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  color: white;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.profile-avatar-btn:hover .profile-avatar-overlay,
+.profile-avatar-btn:disabled .profile-avatar-overlay {
+  opacity: 1;
 }
 
 .profile-identity-info h2 {

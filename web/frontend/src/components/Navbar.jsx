@@ -129,6 +129,11 @@ const Navbar = () => {
                     <FileText size={18} />
                     <span>Audit Log</span>
                     </NavLink>
+
+                    <NavLink to="/profile">
+                    <UserCircle size={18} />
+                    <span>Profile</span>
+                    </NavLink>
               </>
             )}
 

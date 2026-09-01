@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuthContext } from '../hooks/useAuthContext'
 import { useCachedFetch, invalidateCache } from '../hooks/useCachedFetch'
-import { User, Mail, Shield, Calendar, Lock, Edit2, Check, X } from 'lucide-react'
+import { resolveMediaUrl } from '../utils/resolveMediaUrl'
+import { User, Mail, Shield, Calendar, Lock, Edit2, Check, X, Camera } from 'lucide-react'
 
 const Profile = () => {
   const { user } = useAuthContext()
@@ -12,6 +13,11 @@ const Profile = () => {
 
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+
+  // Profile picture upload state
+  const [pictureUrl, setPictureUrl] = useState('')
+  const [uploadingPicture, setUploadingPicture] = useState(false)
+  const fileInputRef = useRef(null)
 
   // Profile edit state
   const [editing, setEditing] = useState(false)
@@ -31,6 +37,7 @@ const Profile = () => {
         lastName: profile.lastName || '',
         email: profile.email || '',
       })
+      setPictureUrl(profile.pictureUrl || '')
     }
   }, [profile])
 
@@ -70,6 +77,40 @@ const Profile = () => {
       setError(err.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handlePictureChange = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow picking the same file again later
+    if (!file) return
+
+    setError('')
+    setSuccessMessage('')
+    setUploadingPicture(true)
+    try {
+      const body = new FormData()
+      body.append('picture', file)
+      const res = await fetch('/api/user/me/picture', {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${user.token}` },
+        body,
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to update picture')
+
+      invalidateCache('/api/user/me')
+      setPictureUrl(data.pictureUrl || '')
+      setSuccessMessage('Profile picture updated')
+
+      const stored = JSON.parse(localStorage.getItem('user') || '{}')
+      localStorage.setItem('user', JSON.stringify({ ...stored, pictureUrl: data.pictureUrl }))
+
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUploadingPicture(false)
     }
   }
 
@@ -143,7 +184,26 @@ const Profile = () => {
       {/* Identity card */}
       <div className="dash-section">
         <div className="profile-identity">
-          <div className="profile-avatar">{initials || '?'}</div>
+          <button
+            type="button"
+            className="profile-avatar profile-avatar-btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadingPicture}
+            title="Change profile picture"
+            style={pictureUrl ? { backgroundImage: `url(${resolveMediaUrl(pictureUrl)})` } : undefined}
+          >
+            {!pictureUrl && (initials || '?')}
+            <span className="profile-avatar-overlay">
+              {uploadingPicture ? '…' : <Camera size={18} />}
+            </span>
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handlePictureChange}
+          />
           <div className="profile-identity-info">
             <h2>{profile.firstName} {profile.lastName}</h2>
             <p>{profile.email}</p>
