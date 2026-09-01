@@ -143,6 +143,7 @@ bool connectWifi(const String& ssid, const String& pass) {
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
     if (millis() - start > 30000) { Serial.println(" failed"); return false; }
+    checkResetButton();  // stay responsive to a held BOOT button while we wait
     delay(500);
     Serial.print(".");
   }
@@ -187,12 +188,20 @@ bool connectMqtt() {
 
 void startStationMode(const String& ssid, const String& pass) {
   mode = MODE_RUNNING;
-  if (!connectWifi(ssid, pass)) {
-    Serial.println("[wifi] giving up; clearing creds and re-provisioning");
-    prefs.remove("wifi_ssid");
-    prefs.remove("wifi_pass");
-    delay(1000);
-    ESP.restart();
+  // A single failed connection attempt doesn't mean the saved credentials
+  // are wrong — most commonly it means the router itself hasn't finished
+  // booting yet (very likely right after this device was powered back on
+  // after being off a while: the ESP32 comes up in seconds, home routers
+  // often take much longer). Keep retrying instead of wiping the stored
+  // Wi-Fi credentials and dropping into provisioning mode on our own —
+  // that should only ever happen from an explicit user action (BOOT button
+  // held 3s, the /reset endpoint, or an MQTT "reset" command).
+  while (!connectWifi(ssid, pass)) {
+    Serial.println("[wifi] retrying in 5s...");
+    for (int i = 0; i < 10; i++) {   // 10 x 500ms, checked in small steps
+      checkResetButton();            // still escapable via a held BOOT button
+      delay(500);
+    }
   }
   tls.setInsecure();  // capstone simplification — production should pin the HiveMQ CA
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
