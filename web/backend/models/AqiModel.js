@@ -19,4 +19,14 @@ const AqiSchema = new Schema({
 // not across the entire collection.
 AqiSchema.index({ deviceId: 1, createdAt: -1 })
 
+// Auto-delete readings older than the retention window, so the collection
+// cannot grow without bound. MongoDB sweeps expired documents in the
+// background roughly once a minute.
+//
+// NOTE: MongoDB will not change expireAfterSeconds on an index that already
+// exists. To adjust the window later, drop the index first:
+//   db.aqis.dropIndex('createdAt_1')
+const RETENTION_DAYS = Number(process.env.AQI_RETENTION_DAYS || 60)
+AqiSchema.index({ createdAt: 1 }, { expireAfterSeconds: RETENTION_DAYS * 24 * 60 * 60 })
+
 module.exports = mongoose.model('AQI', AqiSchema)
