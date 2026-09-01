@@ -350,6 +350,31 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Admin-only: rename a device or move it to a different room.
+  /// Returns null on success, or an error message.
+  Future<String?> updateDevice(String deviceId, String name, String room) async {
+    final uri = Uri.parse('${UserSession.baseUrl}/api/device/$deviceId');
+    try {
+      final res = await http.patch(
+        uri,
+        headers: _authHeaders,
+        body: jsonEncode({'name': name, 'room': room}),
+      ).timeout(const Duration(seconds: 10));
+      final body = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode == 200) {
+        // Optimistically reflect the new name/room locally.
+        _sensors = _sensors
+            .map((s) => s.id == deviceId ? s.copyWith(name: name, room: room) : s)
+            .toList();
+        notifyListeners();
+        return null;
+      }
+      return body['error']?.toString() ?? 'Failed to update device';
+    } catch (e) {
+      return 'Could not reach the server.';
+    }
+  }
+
   /// Admin-only: list users who have access to a device.
   Future<List<Map<String, dynamic>>> getDeviceUsers(String deviceId) async {
     try {

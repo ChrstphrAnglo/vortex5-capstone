@@ -25,16 +25,59 @@ class _ProvisioningNamingPageState extends State<ProvisioningNamingPage> {
   bool _loadingRooms = true;
   String? _roomsError;
 
+  // A sensor's deviceId comes from its fixed hardware MAC address, so it's
+  // the same every time it's re-provisioned (e.g. after a Wi-Fi reset) —
+  // it's never actually "new" from the backend's point of view. If it's
+  // already registered, pre-fill its existing name/room instead of forcing
+  // the admin to type them again; this becomes a "reconnected" moment
+  // rather than a required naming step.
+  bool _isReconnect = false;
+  bool _checkingExisting = true;
+
   @override
   void initState() {
     super.initState();
     _loadRooms();
+    _checkExisting();
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkExisting() async {
+    try {
+      final res = await http.get(
+        Uri.parse('${UserSession.baseUrl}/api/device'),
+        headers: {
+          if (UserSession.current != null)
+            'Authorization': 'Bearer ${UserSession.current!.token}',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(res.body);
+        final existing = data.cast<Map<String, dynamic>>().firstWhere(
+              (d) => d['deviceId']?.toString() == widget.deviceId,
+              orElse: () => const {},
+            );
+        if (existing.isNotEmpty && mounted) {
+          setState(() {
+            _isReconnect = true;
+            _nameCtrl.text = (existing['name'] ?? '').toString();
+            final room = (existing['room'] ?? '').toString();
+            _selectedRoom = room.isEmpty ? null : room;
+          });
+        }
+      }
+    } catch (_) {
+      // Couldn't check — fall back to treating it as a new device, which is
+      // the safe default (just means an extra name/room prompt, not data loss).
+    } finally {
+      if (mounted) setState(() => _checkingExisting = false);
+    }
   }
 
   Future<void> _loadRooms() async {
@@ -134,11 +177,11 @@ class _ProvisioningNamingPageState extends State<ProvisioningNamingPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E5BFF),
         foregroundColor: Colors.white,
-        title: const Text('Name Your Sensor'),
+        title: Text(_isReconnect ? 'Sensor Reconnected' : 'Name Your Sensor'),
         automaticallyImplyLeading: false,
       ),
       body: AbsorbPointer(
-        absorbing: _submitting,
+        absorbing: _submitting || _checkingExisting,
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
@@ -150,14 +193,18 @@ class _ProvisioningNamingPageState extends State<ProvisioningNamingPage> {
                 size: 56,
               ),
               const SizedBox(height: 12),
-              const Text(
-                'Sensor configured!',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+              Text(
+                _isReconnect ? 'Sensor reconnected!' : 'Sensor configured!',
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Text(
-                '${widget.deviceId} should now be online. Give it a name and a '
-                'room so you can find it later.',
+                _isReconnect
+                    ? '${widget.deviceId} is back online on the new network. '
+                        "It kept its name and room — change them below if you'd like, "
+                        'or just tap Finish.'
+                    : '${widget.deviceId} should now be online. Give it a name and a '
+                        'room so you can find it later.',
                 style: const TextStyle(color: Colors.black54, height: 1.4),
               ),
               const SizedBox(height: 24),
@@ -281,7 +328,10 @@ class _ProvisioningNamingPageState extends State<ProvisioningNamingPage> {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       ),
       hint: const Text('Select a room'),
-      items: _rooms
+      // Union with _selectedRoom in case the pre-filled room (from an
+      // already-registered device) isn't in the fetched list — e.g. it was
+      // renamed or deleted since this sensor was last set up.
+      items: ({..._rooms, ?_selectedRoom}.toList()..sort())
           .map((r) => DropdownMenuItem(value: r, child: Text(r)))
           .toList(),
       onChanged: (value) => setState(() => _selectedRoom = value),

@@ -76,6 +76,24 @@ class _DeviceListPageState extends State<DeviceListPage> {
     );
   }
 
+  Future<void> _editDevice(SensorDevice s) async {
+    final result = await showEditDeviceDialog(context, s);
+    if (result == null || !mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _busy.add(s.id));
+    final error = await widget.appState.updateDevice(
+      s.id,
+      result['name']!,
+      result['room']!,
+    );
+    if (!mounted) return;
+    setState(() => _busy.remove(s.id));
+    messenger.showSnackBar(
+      SnackBar(content: Text(error ?? 'Device updated.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final sensors = widget.appState.sensors;
@@ -231,6 +249,12 @@ class _DeviceListPageState extends State<DeviceListPage> {
               ),
             )
           else ...[
+            // Edit (rename / change room)
+            IconButton(
+              tooltip: 'Edit',
+              onPressed: () => _editDevice(s),
+              icon: const Icon(Icons.edit_outlined, color: Color(0xFF64748B)),
+            ),
             // Power on/off
             IconButton(
               tooltip: isOff ? 'Turn on' : 'Turn off',
