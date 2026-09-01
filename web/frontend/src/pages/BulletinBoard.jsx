@@ -5,6 +5,7 @@ import { useAuthContext } from '../hooks/useAuthContext'
 import { Maximize2, Minimize2, Pause, Play, CalendarDays, Newspaper, ChevronLeft, ChevronRight } from 'lucide-react'
 import bewAirLogo from '../assets/bewair_logo_black.png'
 import { CATEGORY_COLORS, aqiCategory } from '../utils/airQualityGuidance'
+import { resolveMediaUrl } from '../utils/resolveMediaUrl'
 
 const BulletinBoard = () => {
   const { user } = useAuthContext()
@@ -127,11 +128,6 @@ const BulletinBoard = () => {
   const formatDate = () => currentTime.toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric'
   })
-  const getVideoUrl = (videoUrl) => {
-    const base = import.meta.env.VITE_API_URL || 'https://vortex5-capstone.onrender.com'
-    return `${base}${videoUrl}`
-  }
-
   const hasVideos = mediaList.length > 0
   const currentVideo = hasVideos ? mediaList[currentVideoIndex] : null
 
@@ -219,7 +215,7 @@ const BulletinBoard = () => {
               <video
                 key={currentVideo._id}
                 ref={videoRef}
-                src={getVideoUrl(currentVideo.videoUrl)}
+                src={resolveMediaUrl(currentVideo.videoUrl)}
                 className="kiosk-video"
                 autoPlay={isPlaying}
                 onEnded={handleVideoEnded}

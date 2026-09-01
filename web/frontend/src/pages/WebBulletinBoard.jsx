@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAuthContext } from '../hooks/useAuthContext'
+import { resolveMediaUrl } from '../utils/resolveMediaUrl'
 
 const WebBulletinBoard = () => {
   const { user } = useAuthContext()
@@ -471,7 +472,7 @@ const handleUpdate = async () => {
     <div key={m._id} className="media-card">
       <video width="250" controls>
         <source
-          src={`https://vortex5-capstone.onrender.com${m.videoUrl}`}
+          src={resolveMediaUrl(m.videoUrl)}
           type="video/mp4"
         />
       </video>

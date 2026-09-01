@@ -1,23 +1,16 @@
 const multer = require('multer')
-const fs = require('fs')
-const path = require('path')
+const CloudinaryStorage = require('../utils/cloudinaryStorage')
 
 // Separate multer instance for images (profile pictures) — upload.js stays
 // video-only since it's shared with the existing Bulletin Board media route.
-const UPLOAD_DIR = path.join(__dirname, '..', 'uploads')
-
-if (!fs.existsSync(UPLOAD_DIR)) {
-  fs.mkdirSync(UPLOAD_DIR, { recursive: true })
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, UPLOAD_DIR)
-  },
-  filename: (req, file, cb) => {
-    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')
-    cb(null, Date.now() + '-' + safe)
-  }
+// Uploads go straight to Cloudinary (see utils/cloudinaryStorage.js) instead
+// of local disk, since Render's disk is ephemeral.
+const storage = new CloudinaryStorage({
+  folder: 'bewair/profile-pictures',
+  resourceType: 'image',
+  // Cap the stored size — no reason to keep a full-resolution upload for a
+  // small circular avatar, and it keeps free-tier storage from filling up.
+  transformation: [{ width: 800, height: 800, crop: 'limit' }],
 })
 
 const uploadImage = multer({

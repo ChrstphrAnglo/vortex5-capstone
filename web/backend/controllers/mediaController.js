@@ -1,6 +1,5 @@
 const Media = require('../models/MediaModel')
-const fs = require('fs')
-const path = require('path')
+const cloudinary = require('../utils/cloudinary')
 const logAudit = require('../utils/logAudit')
 
 /* GET ALL MEDIA */
@@ -22,9 +21,13 @@ const createMedia = async (req, res) => {
       return res.status(400).json({ error: 'No video file uploaded' })
     }
 
-    const videoUrl = `/uploads/${req.file.filename}`
-
-    const media = await Media.create({ title, videoUrl })
+    // req.file.path is the Cloudinary secure URL, req.file.filename is its
+    // public_id (see utils/cloudinaryStorage.js).
+    const media = await Media.create({
+      title,
+      videoUrl: req.file.path,
+      publicId: req.file.filename,
+    })
 
     // Add audit log for upload
     await logAudit({
@@ -53,11 +56,14 @@ const deleteMedia = async (req, res) => {
       return res.status(404).json({ error: 'Media not found' })
     }
 
-    // Delete the actual file from uploads folder
-    if (media.videoUrl) {
-      const filePath = path.join(__dirname, '..', media.videoUrl)
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath)
+    // Delete the actual video from Cloudinary. invalidate: true also clears
+    // the CDN cache — without it, the deleted video's URL can keep
+    // resolving for a while even though it's gone from Cloudinary's storage.
+    if (media.publicId) {
+      try {
+        await cloudinary.uploader.destroy(media.publicId, { resource_type: 'video', invalidate: true })
+      } catch (err) {
+        console.error('[media] failed to delete Cloudinary video:', err.message)
       }
     }
 

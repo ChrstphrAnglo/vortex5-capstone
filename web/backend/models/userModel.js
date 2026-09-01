@@ -42,6 +42,12 @@ const userSchema = new Schema ({
         type: String,
         default: ''
     },
+    // Cloudinary's public_id for pictureUrl — needed to delete the old
+    // image from Cloudinary when it's replaced.
+    picturePublicId: {
+        type: String,
+        default: ''
+    },
     status: {
         type: String,
         enum: ['pending', 'active', 'deactivated'],

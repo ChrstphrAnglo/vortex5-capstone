@@ -8,6 +8,12 @@ const mediaSchema = new mongoose.Schema({
   videoUrl: {
     type: String,
     required: true
+  },
+  // Cloudinary's public_id for videoUrl — needed to delete the video from
+  // Cloudinary when this record is deleted.
+  publicId: {
+    type: String,
+    default: ''
   }
 }, { timestamps: true })
 

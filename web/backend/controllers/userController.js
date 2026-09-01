@@ -4,8 +4,7 @@ const PasswordReset = require('../models/passwordResetModel')
 const jwt = require('jsonwebtoken')
 const bcrypt = require('bcrypt')
 const validator = require('validator')
-const fs = require('fs')
-const path = require('path')
+const cloudinary = require('../utils/cloudinary')
 const logAudit = require('../utils/logAudit');
 const sendVerificationEmail = require('../utils/sendVerificationEmail')
 const sendPasswordResetEmail = require('../utils/sendPasswordResetEmail')
@@ -485,16 +484,23 @@ const updateMyPicture = async (req, res) => {
         const user = await User.findById(req.user._id)
         if (!user) return res.status(404).json({ error: 'User not found' })
 
-        // Delete the previous picture from disk, if any, to avoid orphaned files
-        if (user.pictureUrl) {
-            const oldPath = path.join(__dirname, '..', user.pictureUrl)
-            if (fs.existsSync(oldPath)) {
-                fs.unlinkSync(oldPath)
-            }
-        }
-
-        user.pictureUrl = `/uploads/${req.file.filename}`
+        // req.file.path is the Cloudinary secure URL, req.file.filename is
+        // its public_id (see utils/cloudinaryStorage.js).
+        const oldPublicId = user.picturePublicId
+        user.pictureUrl = req.file.path
+        user.picturePublicId = req.file.filename
         await user.save()
+
+        // Clean up the previous image now that the new one is safely saved.
+        // Fire-and-forget — a failed cleanup shouldn't fail the request.
+        if (oldPublicId) {
+            // invalidate: true also clears Cloudinary's CDN cache for this
+            // asset — without it, the old image's URL can keep resolving
+            // for a while even though it's deleted from Cloudinary's storage.
+            cloudinary.uploader.destroy(oldPublicId, { invalidate: true }).catch((err) =>
+                console.error('[picture] failed to delete old Cloudinary image:', err.message)
+            )
+        }
 
         logAudit({
             module: 'User',

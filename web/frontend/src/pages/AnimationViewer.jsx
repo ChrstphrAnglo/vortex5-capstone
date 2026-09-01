@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react'
+import { resolveMediaUrl } from '../utils/resolveMediaUrl'
 
 const AnimationViewer = () => {
   const [media, setMedia] = useState([])
@@ -71,7 +72,7 @@ const AnimationViewer = () => {
           <video
             key={current._id}
             ref={videoRef}
-            src={`https://vortex5-capstone.onrender.com${current.videoUrl}`}
+            src={resolveMediaUrl(current.videoUrl)}
             className="anim-video"
             controls
             autoPlay
