@@ -5,9 +5,9 @@ import { useCachedFetch } from '../hooks/useCachedFetch'
 import { CATEGORY_COLORS, aqiCategory } from '../utils/airQualityGuidance'
 
 const STATUS_LABELS = {
-  active:    { label: 'Active',   color: '#16a34a', bg: '#dcfce7' },
-  available: { label: 'No Data',  color: '#d97706', bg: '#fef3c7' },
-  offline:   { label: 'Inactive', color: '#dc2626', bg: '#fee2e2' },
+  active:    { label: 'Active',   color: 'var(--color-success-strong)', bg: 'var(--color-success-soft)' },
+  available: { label: 'No Data',  color: 'var(--color-warning-strong)', bg: 'var(--color-warning-soft)' },
+  offline:   { label: 'Inactive', color: 'var(--color-danger-strong)',  bg: 'var(--color-danger-soft)' },
 }
 
 const StaffDeviceList = () => {

@@ -33,6 +33,10 @@
   --color-danger-strong:  #991b1b;
   --color-info:           #2563eb;
   --color-info-soft:      #dbeafe;
+  --color-info-strong:    #1d4ed8;
+  --color-accent:         #7c3aed;
+  --color-accent-soft:    #ede9fe;
+  --color-accent-strong:  #6d28d9;
 
   /* Neutrals (surfaces) */
   --color-bg:             #f6f8fb;   /* page background */
@@ -115,6 +119,9 @@
   --color-warning-soft:   rgba(245, 158, 11, 0.15);
   --color-danger-soft:    rgba(220, 38, 38, 0.15);
   --color-info-soft:      rgba(37, 99, 235, 0.15);
+  --color-info-strong:    #93c5fd;
+  --color-accent-soft:    rgba(124, 58, 237, 0.18);
+  --color-accent-strong:  #c4b5fd;
 
   /* The light-mode -strong values (#166534 etc.) are dark, low-luminance
      text meant to sit on a pale -soft background. Paired with the
@@ -3282,7 +3289,7 @@ input, select {
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   padding-top: 10px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border);
 }
 
 .dash-metric {
@@ -3307,9 +3314,9 @@ input, select {
 .dash-device-cta {
   margin-top: 12px;
   padding-top: 10px;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--color-border);
   font-size: 12px;
-  color: #2563eb;
+  color: var(--color-link);
   font-weight: 600;
   text-align: center;
 }
@@ -3385,8 +3392,8 @@ input, select {
 }
 
 .dash-empty-ok {
-  background: #f0fdf4;
-  color: #166534;
+  background: var(--color-success-soft);
+  color: var(--color-success-strong);
   font-weight: 500;
 }
 
@@ -3903,7 +3910,7 @@ input, select {
   display: flex;
   gap: 6px;
   margin-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .alerts-tab {
@@ -3945,7 +3952,7 @@ input, select {
 }
 
 .alerts-tab-badge-muted {
-  background: #cbd5e1;
+  background: var(--color-surface-3);
   color: var(--color-text-secondary);
 }
 
@@ -4003,20 +4010,20 @@ input, select {
 /* ---- Profile page ---- */
 .profile-success {
   padding: 12px 16px;
-  background: #dcfce7;
-  border: 1px solid #86efac;
+  background: var(--color-success-soft);
+  border: 1px solid var(--color-success-strong);
   border-radius: 8px;
-  color: #166534;
+  color: var(--color-success-strong);
   font-size: 14px;
   margin-bottom: 16px;
 }
 
 .profile-error {
   padding: 10px 14px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--color-danger-soft);
+  border: 1px solid var(--color-danger-strong);
   border-radius: 8px;
-  color: #991b1b;
+  color: var(--color-danger-strong);
   font-size: 13px;
   margin: 8px 0;
 }
@@ -4104,23 +4111,23 @@ input, select {
 }
 
 .profile-badge-admin {
-  background: #ede9fe;
-  color: #6d28d9;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
 }
 
 .profile-badge-staff {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--color-info-soft);
+  color: var(--color-info-strong);
 }
 
 .profile-badge-status-active {
-  background: #dcfce7;
-  color: #166534;
+  background: var(--color-success-soft);
+  color: var(--color-success-strong);
 }
 
 .profile-badge-status-deactivated {
-  background: #fee2e2;
-  color: #991b1b;
+  background: var(--color-danger-soft);
+  color: var(--color-danger-strong);
 }
 
 .profile-display {
@@ -4172,7 +4179,8 @@ input, select {
 
 .profile-input {
   padding: 10px 12px;
-  border: 1px solid #cbd5e1;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
   border-radius: 8px;
   font-size: 14px;
   color: var(--color-text-primary);
@@ -4181,8 +4189,8 @@ input, select {
 }
 
 .profile-input:focus {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+  border-color: var(--color-link);
+  box-shadow: 0 0 0 3px var(--brand-blue-soft);
 }
 
 .profile-edit-btn {
@@ -4411,7 +4419,7 @@ input, select {
   gap: 10px;
   padding: 12px 16px;
   background: var(--color-surface);
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-border);
 }
 
 .kiosk-ctrl-btn {
@@ -4429,7 +4437,7 @@ input, select {
 }
 
 .kiosk-ctrl-btn:hover {
-  background: #e2e8f0;
+  background: var(--color-surface-3);
   color: var(--color-text-primary);
 }
 

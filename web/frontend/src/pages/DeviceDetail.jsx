@@ -236,7 +236,7 @@ const DeviceDetail = () => {
       {isOnline && <RecommendedActions reading={displayReading} />}
 
       {!isOnline && lastReadingAt && (
-        <div className="dash-empty" style={{ marginTop: 16, borderColor: '#fcd34d', color: '#92400e', background: '#fffbeb' }}>
+        <div className="dash-empty" style={{ marginTop: 16, borderColor: 'var(--color-warning)', color: 'var(--color-warning-strong)', background: 'var(--color-warning-soft)' }}>
           Showing last known reading from {new Date(lastReadingAt).toLocaleString()}.
           Live data will resume when the device reconnects.
         </div>
