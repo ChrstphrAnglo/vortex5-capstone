@@ -12,6 +12,9 @@ const AuditLogs = () => {
   const [currentPage, setCurrentPage] = useState(1)
   const [sortModule, setSortModule] = useState('all')
   const [sortDate, setSortDate] = useState('latest')
+  const [search, setSearch] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
 
   useEffect(() => {
     if (!user || user.role !== 'admin') {
@@ -44,10 +47,36 @@ const AuditLogs = () => {
   if (error) return <p style={{ color: 'red' }}>{error}</p>
 
   // FILTER
-  const filteredLogs =
-    sortModule === 'all'
-      ? logs
-      : logs.filter(log => log.module === sortModule)
+  const query = search.trim().toLowerCase()
+  const fromTime = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null
+  const toTime = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null
+
+  const filteredLogs = logs.filter(log => {
+    if (sortModule !== 'all' && log.module !== sortModule) return false
+
+    if (query) {
+      const haystack = `${log.module} ${log.action} ${log.user}`.toLowerCase()
+      if (!haystack.includes(query)) return false
+    }
+
+    if (fromTime != null || toTime != null) {
+      const t = new Date(log.date).getTime()
+      if (fromTime != null && t < fromTime) return false
+      if (toTime != null && t > toTime) return false
+    }
+
+    return true
+  })
+
+  const filtersActive = query !== '' || fromDate !== '' || toDate !== '' || sortModule !== 'all'
+
+  const clearFilters = () => {
+    setSearch('')
+    setFromDate('')
+    setToDate('')
+    setSortModule('all')
+    setCurrentPage(1)
+  }
 
   // SORT
   const sortedLogs = [...filteredLogs].sort((a, b) => {
@@ -68,7 +97,46 @@ const AuditLogs = () => {
       </div>
 
       {/* FILTER / SORT */}
-      <div className="table-controls">
+      <div className="table-controls" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <input
+          type="text"
+          placeholder="Search module, action, or user..."
+          value={search}
+          onChange={e => {
+            setSearch(e.target.value)
+            setCurrentPage(1)
+          }}
+          className="search-input"
+        />
+
+        <div>
+          <label>From:</label>
+          <input
+            type="date"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={e => {
+              setFromDate(e.target.value)
+              setCurrentPage(1)
+            }}
+            className="sort-select"
+          />
+        </div>
+
+        <div>
+          <label>To:</label>
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={e => {
+              setToDate(e.target.value)
+              setCurrentPage(1)
+            }}
+            className="sort-select"
+          />
+        </div>
+
         <div>
           <label>Module:</label>
           <select
@@ -102,6 +170,12 @@ const AuditLogs = () => {
             <option value="oldest">Oldest</option>
           </select>
         </div>
+
+        {filtersActive && (
+          <button type="button" className="btn btn-secondary" onClick={clearFilters}>
+            Clear filters
+          </button>
+        )}
       </div>
 
       {/* TABLE */}
