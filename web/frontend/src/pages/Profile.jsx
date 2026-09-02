@@ -119,11 +119,12 @@ const Profile = () => {
     setPwdError('')
     setSuccessMessage('')
 
-    if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+    const trimmedNewPassword = pwdForm.newPassword.trim()
+    if (trimmedNewPassword !== pwdForm.confirmPassword.trim()) {
       setPwdError('New passwords do not match')
       return
     }
-    if (pwdForm.newPassword.length < 8) {
+    if (trimmedNewPassword.length < 8) {
       setPwdError('New password must be at least 8 characters')
       return
     }
@@ -138,7 +139,7 @@ const Profile = () => {
         },
         body: JSON.stringify({
           currentPassword: pwdForm.currentPassword,
-          newPassword: pwdForm.newPassword,
+          newPassword: trimmedNewPassword,
         }),
       })
       const data = await res.json()

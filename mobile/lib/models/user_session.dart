@@ -291,10 +291,11 @@ class UserSession {
         confirmPassword.trim().isEmpty) {
       return "Please complete all password fields.";
     }
-    if (newPassword != confirmPassword) {
+    final trimmedNewPassword = newPassword.trim();
+    if (trimmedNewPassword != confirmPassword.trim()) {
       return "New passwords do not match.";
     }
-    final passErr = validateStrongPassword(newPassword);
+    final passErr = validateStrongPassword(trimmedNewPassword);
     if (passErr != null) return passErr;
 
     try {
@@ -307,7 +308,7 @@ class UserSession {
             },
             body: jsonEncode({
               "currentPassword": currentPassword,
-              "newPassword": newPassword,
+              "newPassword": trimmedNewPassword,
             }),
           )
           .timeout(_standardTimeout);
