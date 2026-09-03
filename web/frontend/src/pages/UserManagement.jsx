@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { useAuthContext } from "../hooks/useAuthContext"
-import { Shield, UserCheck, Eye, Power, Clock, CheckCircle, Trash2 } from "lucide-react"
+import { Shield, UserCheck, Eye, EyeOff, Power, Clock, CheckCircle, Trash2 } from "lucide-react"
+import Avatar from "../components/Avatar"
 
 const USERS_PER_PAGE = 10
 
@@ -30,6 +31,7 @@ const UserManagement = () => {
     })
     const [createError, setCreateError] = useState('')
     const [creating, setCreating] = useState(false)
+    const [showCreatePw, setShowCreatePw] = useState(false)
 
     // ================= FETCH USERS (ADMIN / STAFF ONLY) =================
     useEffect(() => {
@@ -260,6 +262,7 @@ const UserManagement = () => {
 
         setUsers(prev => [data, ...prev])
         setCreateOpen(false)
+        setShowCreatePw(false)
         setCreateForm({ firstName: '', lastName: '', email: '', password: '', role: 'staff' })
         const roleLabel = role.charAt(0).toUpperCase() + role.slice(1)
         setSuccessMessage(`${roleLabel} account created for ${data.email}`)
@@ -348,7 +351,15 @@ const UserManagement = () => {
                                     className={`${pendingRoles[u._id] ? "row-edited" : ""} ${u.status === 'deactivated' ? "row-deactivated" : ""}`}
                                 >
                                     <td className="user-name">
-                                        {u.firstName} {u.lastName}
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                            <Avatar
+                                                src={u.pictureUrl}
+                                                name={`${u.firstName || ''} ${u.lastName || ''}`}
+                                                email={u.email}
+                                                size={32}
+                                            />
+                                            <span>{u.firstName} {u.lastName}</span>
+                                        </span>
                                     </td>
 
                                     <td className="user-email">{u.email}</td>
@@ -636,6 +647,14 @@ const UserManagement = () => {
                             </div>
 
                             <div className="modal-body">
+                                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                                    <Avatar
+                                        src={viewUser.pictureUrl}
+                                        name={`${viewUser.firstName || ''} ${viewUser.lastName || ''}`}
+                                        email={viewUser.email}
+                                        size={72}
+                                    />
+                                </div>
                                 <p><strong>Name:</strong> {viewUser.firstName} {viewUser.lastName}</p>
                                 <p><strong>Email:</strong> {viewUser.email}</p>
                                 <p><strong>Status:</strong> {viewUser.status || 'active'}</p>
@@ -748,13 +767,24 @@ const UserManagement = () => {
                                             onChange={e => setCreateForm({ ...createForm, email: e.target.value })}
                                             className="search-input"
                                         />
-                                        <input
-                                            type="password"
-                                            placeholder="Password (min 8, mixed case, number, symbol)"
-                                            value={createForm.password}
-                                            onChange={e => setCreateForm({ ...createForm, password: e.target.value })}
-                                            className="search-input"
-                                        />
+                                        <div className="pw-wrap">
+                                            <input
+                                                type={showCreatePw ? 'text' : 'password'}
+                                                placeholder="Password (min 8, mixed case, number, symbol)"
+                                                value={createForm.password}
+                                                onChange={e => setCreateForm({ ...createForm, password: e.target.value })}
+                                                className="search-input"
+                                            />
+                                            <button
+                                                type="button"
+                                                className="pw-toggle"
+                                                tabIndex={-1}
+                                                aria-label={showCreatePw ? 'Hide password' : 'Show password'}
+                                                onClick={() => setShowCreatePw(v => !v)}
+                                            >
+                                                {showCreatePw ? <EyeOff size={16} /> : <Eye size={16} />}
+                                            </button>
+                                        </div>
                                         <select
                                             value={createForm.role}
                                             onChange={e => setCreateForm({ ...createForm, role: e.target.value })}
@@ -775,6 +805,7 @@ const UserManagement = () => {
                                         onClick={() => {
                                             setCreateOpen(false)
                                             setCreateError('')
+                                            setShowCreatePw(false)
                                         }}
                                         disabled={creating}
                                     >

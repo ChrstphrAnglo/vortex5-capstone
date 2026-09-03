@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { UserPlus, UserX, Users, Loader2, X } from 'lucide-react'
+import Avatar from './Avatar'
 
 // Manage which staff accounts can see a device. Used from both the device
 // detail page and the admin Device Management table, so the whole
@@ -104,9 +105,13 @@ const ShareDeviceModal = ({ deviceId, deviceName, deviceRoom, token, onClose, on
           ) : (
             sharedUsers.map(u => (
               <div key={u._id} className="share-user-row">
-                <div className="share-user-avatar">
-                  {(u.firstName?.[0] || u.email[0]).toUpperCase()}
-                </div>
+                <Avatar
+                  className="share-user-avatar"
+                  src={u.pictureUrl}
+                  name={u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : ''}
+                  email={u.email}
+                  size={36}
+                />
                 <div className="share-user-info">
                   <div className="share-user-name">
                     {u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.email}

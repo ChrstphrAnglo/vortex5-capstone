@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuthContext } from '../hooks/useAuthContext'
 import { useCachedFetch, invalidateCache } from '../hooks/useCachedFetch'
-import { resolveMediaUrl } from '../utils/resolveMediaUrl'
-import { User, Mail, Shield, Calendar, Lock, Edit2, Check, X, Camera } from 'lucide-react'
+import Avatar from '../components/Avatar'
+import { User, Mail, Shield, Calendar, Lock, Edit2, Check, X, Camera, Eye, EyeOff } from 'lucide-react'
 
 const Profile = () => {
   const { user } = useAuthContext()
@@ -28,6 +28,19 @@ const Profile = () => {
   const [pwdForm, setPwdForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' })
   const [pwdError, setPwdError] = useState('')
   const [pwdSaving, setPwdSaving] = useState(false)
+  const [pwdShow, setPwdShow] = useState({ current: false, next: false, confirm: false })
+
+  const pwdToggle = (key) => (
+    <button
+      type="button"
+      className="pw-toggle"
+      tabIndex={-1}
+      aria-label={pwdShow[key] ? 'Hide password' : 'Show password'}
+      onClick={() => setPwdShow(v => ({ ...v, [key]: !v[key] }))}
+    >
+      {pwdShow[key] ? <EyeOff size={16} /> : <Eye size={16} />}
+    </button>
+  )
 
   // Initialize the edit form whenever profile data becomes available.
   useEffect(() => {
@@ -159,7 +172,6 @@ const Profile = () => {
   if (loading && !profile) return <div className="dash-page"><p>Loading profile...</p></div>
   if (!profile) return <div className="dash-page"><p style={{ color: 'red' }}>{error || 'Not signed in.'}</p></div>
 
-  const initials = `${profile.firstName?.[0] || ''}${profile.lastName?.[0] || ''}`.toUpperCase()
   const joinedDate = profile.createdAt
     ? new Date(profile.createdAt).toLocaleDateString('en-US', {
         year: 'numeric', month: 'long', day: 'numeric'
@@ -191,9 +203,13 @@ const Profile = () => {
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadingPicture}
             title="Change profile picture"
-            style={pictureUrl ? { backgroundImage: `url(${resolveMediaUrl(pictureUrl)})` } : undefined}
           >
-            {!pictureUrl && (initials || '?')}
+            <Avatar
+              src={pictureUrl}
+              name={`${profile.firstName || ''} ${profile.lastName || ''}`}
+              email={profile.email}
+              size={80}
+            />
             <span className="profile-avatar-overlay">
               {uploadingPicture ? '…' : <Camera size={18} />}
             </span>
@@ -307,32 +323,41 @@ const Profile = () => {
         </div>
         <form className="profile-form" onSubmit={handleChangePassword}>
           <ProfileField icon={<Lock size={16} />} label="Current password">
-            <input
-              type="password"
-              value={pwdForm.currentPassword}
-              onChange={e => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
-              className="profile-input"
-              required
-            />
+            <div className="pw-wrap">
+              <input
+                type={pwdShow.current ? 'text' : 'password'}
+                value={pwdForm.currentPassword}
+                onChange={e => setPwdForm({ ...pwdForm, currentPassword: e.target.value })}
+                className="profile-input"
+                required
+              />
+              {pwdToggle('current')}
+            </div>
           </ProfileField>
           <ProfileField icon={<Lock size={16} />} label="New password">
-            <input
-              type="password"
-              value={pwdForm.newPassword}
-              onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
-              className="profile-input"
-              required
-              placeholder="Min 8 chars, mixed case, number, symbol"
-            />
+            <div className="pw-wrap">
+              <input
+                type={pwdShow.next ? 'text' : 'password'}
+                value={pwdForm.newPassword}
+                onChange={e => setPwdForm({ ...pwdForm, newPassword: e.target.value })}
+                className="profile-input"
+                required
+                placeholder="Min 8 chars, mixed case, number, symbol"
+              />
+              {pwdToggle('next')}
+            </div>
           </ProfileField>
           <ProfileField icon={<Lock size={16} />} label="Confirm new password">
-            <input
-              type="password"
-              value={pwdForm.confirmPassword}
-              onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
-              className="profile-input"
-              required
-            />
+            <div className="pw-wrap">
+              <input
+                type={pwdShow.confirm ? 'text' : 'password'}
+                value={pwdForm.confirmPassword}
+                onChange={e => setPwdForm({ ...pwdForm, confirmPassword: e.target.value })}
+                className="profile-input"
+                required
+              />
+              {pwdToggle('confirm')}
+            </div>
           </ProfileField>
 
           {pwdError && <div className="profile-error">{pwdError}</div>}

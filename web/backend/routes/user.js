@@ -2,6 +2,7 @@ const express = require('express')
 const { requireAuth, requireAdmin } = require('../middleware/requireAuth')
 const { emailCodeLimiter } = require('../middleware/rateLimit')
 const uploadImage = require('../middleware/uploadImage')
+const cloudinary = require('../utils/cloudinary')
 const {
     signupUser,
     sendSignupCode,
@@ -28,6 +29,12 @@ const router = express.Router()
 // limit) into clean JSON responses instead of an unhandled HTML error page —
 // same convention as the media/video upload route in routes/media.js.
 const uploadPicture = (req, res, next) => {
+    if (!cloudinary.isConfigured) {
+        console.error('[upload] Cloudinary not configured — rejecting picture upload')
+        return res.status(503).json({
+            error: 'Image uploads are not configured on the server. Please contact an administrator.'
+        })
+    }
     uploadImage.single('picture')(req, res, (err) => {
         if (err) {
             console.error('[upload] multer error:', err.message)

@@ -148,7 +148,7 @@ const getDeviceUsers = async (req, res) => {
   const { deviceId } = req.params
   try {
     const users = await User.find({ devices: deviceId, role: { $ne: 'admin' } })
-      .select('email firstName lastName role')
+      .select('email firstName lastName role pictureUrl')
     res.status(200).json(users)
   } catch (error) {
     res.status(500).json({ error: error.message })

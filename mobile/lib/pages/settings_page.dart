@@ -16,6 +16,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _deleteAccount() async {
     final passwordCtrl = TextEditingController();
+    bool obscure = true;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -31,7 +32,19 @@ class _SettingsPageState extends State<SettingsPage> {
                 style: TextStyle(color: Colors.red),
               ),
               const SizedBox(height: 16),
-              _field(passwordCtrl, 'Confirm your password', obscureText: true),
+              StatefulBuilder(
+                builder: (context, setInnerState) => _field(
+                  passwordCtrl,
+                  'Confirm your password',
+                  obscureText: obscure,
+                  suffix: IconButton(
+                    onPressed: () => setInnerState(() => obscure = !obscure),
+                    icon: Icon(
+                      obscure ? Icons.visibility : Icons.visibility_off,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -125,11 +138,11 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   TextField _field(TextEditingController ctrl, String label,
-      {bool obscureText = false}) {
+      {bool obscureText = false, Widget? suffix}) {
     return TextField(
       controller: ctrl,
       obscureText: obscureText,
-      decoration: _inputDecoration(label),
+      decoration: _inputDecoration(label).copyWith(suffixIcon: suffix),
     );
   }
 
