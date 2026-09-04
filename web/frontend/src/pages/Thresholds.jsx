@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAuthContext } from '../hooks/useAuthContext'
 import {
@@ -197,23 +197,54 @@ const Thresholds = () => {
     }
   }
 
+  // Grouped the same way as the read view, one field per row, so the form and
+  // the page it edits read alike. A two-sided field is one row with a pair of
+  // inputs joined by a dash, because a range is what the value actually is —
+  // separate "Temperature min" and "Temperature max" fields read as unrelated
+  // numbers. Each input carries the published value as its placeholder, so a
+  // blank field literally shows the number that will be used.
   const renderFields = (data, onChange) => (
-    <div className="threshold-grid">
-      {FIELD_DEFS.map(({ key, label, unit, alerting }) => (
-        <div className="field" key={key}>
-          <label>
-            {label}{unit ? ` (${unit})` : ''}
-            {!alerting && <span className="field-note"> · feeds AQI</span>}
-          </label>
-          <input
-            type="number"
-            name={key}
-            value={data[key]}
-            onChange={onChange}
-            placeholder={canonical[key] != null ? String(canonical[key]) : ''}
-            className="search-input"
-          />
-        </div>
+    <div className="tl-form">
+      {GROUPS.map((group) => (
+        <fieldset className="tl-form-group" key={group.key}>
+          <legend className="tl-form-legend">{group.label}</legend>
+
+          {group.fields.map((f) => {
+            const keys = keysOf(f)
+            return (
+              <div className="tl-form-row" key={f.key}>
+                <label className="tl-form-label" htmlFor={`th-${keys[0]}`}>
+                  {f.label}
+                </label>
+
+                <div className="tl-form-controls">
+                  {keys.map((k, i) => (
+                    <Fragment key={k}>
+                      {i > 0 && <span className="tl-form-dash" aria-hidden="true">–</span>}
+                      <input
+                        id={`th-${k}`}
+                        type="number"
+                        name={k}
+                        value={data[k]}
+                        onChange={onChange}
+                        placeholder={canonical[k] != null ? String(canonical[k]) : ''}
+                        className="tl-form-input"
+                        aria-label={
+                          keys.length > 1
+                            ? `${f.label} ${i === 0 ? 'minimum' : 'maximum'}`
+                            : f.label
+                        }
+                      />
+                    </Fragment>
+                  ))}
+
+                  {f.unit && <span className="tl-form-unit">{f.unit}</span>}
+                  {!f.alerting && <span className="tl-form-note">feeds AQI</span>}
+                </div>
+              </div>
+            )
+          })}
+        </fieldset>
       ))}
     </div>
   )
@@ -229,21 +260,22 @@ const Thresholds = () => {
 
       {showModal && (
         <div className="modal-overlay">
-          <div className="modal-card">
+          <div className="modal-card is-wide">
             <form onSubmit={handleSubmit}>
               <div className="modal-header">
-                <h3>Configure Threshold</h3>
+                <h3>Add override</h3>
               </div>
 
               <div className="modal-body">
                 <p className="threshold-hint">
-                  Leave a field blank to keep the standard value shown in grey.
-                  A number here overrides that one limit only.
+                  Leave a limit blank to keep the published standard, shown in grey.
+                  A number replaces that one limit only.
                 </p>
 
                 <div className="label-row">
-                  <label>Label</label>
+                  <label htmlFor="th-label">Name</label>
                   <input
+                    id="th-label"
                     type="text"
                     name="label"
                     placeholder="e.g. Exam week, windows closed"
@@ -263,7 +295,7 @@ const Thresholds = () => {
                 <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
                   Cancel
                 </button>
-                <button className="btn btn-primary">Add Threshold</button>
+                <button className="btn btn-primary">Add override</button>
               </div>
             </form>
           </div>
@@ -272,21 +304,22 @@ const Thresholds = () => {
 
       {showEditModal && (
         <div className="modal-overlay">
-          <div className="modal-card">
+          <div className="modal-card is-wide">
             <form onSubmit={(e) => { e.preventDefault(); handleUpdate() }}>
               <div className="modal-header">
-                <h3>Edit Threshold</h3>
+                <h3>Edit override</h3>
               </div>
 
               <div className="modal-body">
                 <p className="threshold-hint">
-                  Leave a field blank to keep the standard value shown in grey.
-                  A number here overrides that one limit only.
+                  Leave a limit blank to keep the published standard, shown in grey.
+                  A number replaces that one limit only.
                 </p>
 
                 <div className="label-row">
-                  <label>Label</label>
+                  <label htmlFor="th-label">Name</label>
                   <input
+                    id="th-label"
                     type="text"
                     name="label"
                     value={editData.label}
@@ -305,7 +338,7 @@ const Thresholds = () => {
                 <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(false)}>
                   Cancel
                 </button>
-                <button className="btn btn-primary">Save Changes</button>
+                <button className="btn btn-primary">Save changes</button>
               </div>
             </form>
           </div>

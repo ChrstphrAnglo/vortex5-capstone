@@ -1558,6 +1558,140 @@ input, select {
   background-color: var(--color-surface-2);
 }
 
+/* ============ THRESHOLD OVERRIDE FORM ============
+   Its own class names rather than the shared .threshold-grid / .field, which
+   WebBulletinBoard also uses, and its own width modifier rather than widening
+   .modal-card, which five pages share.
+
+   The bug this replaces: .search-input sets `flex: 1`, and .field is a COLUMN
+   flex container, so that basis applied to the height and left every input at
+   its intrinsic ~177px width. In a 400px modal split into two grid columns of
+   ~162px, every input overflowed its cell and the right-hand column spilled
+   out past the card. Inputs here carry an explicit width instead. */
+
+/* Wide enough for eleven numeric fields, and scrolls rather than growing past
+   the viewport on a laptop screen. */
+.modal-card.is-wide {
+  width: 560px;
+  max-width: 94vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-card.is-wide > form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.modal-card.is-wide .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.tl-form {
+  margin-top: 16px;
+}
+
+/* Grouped like the read view, so the form and the page it edits read alike. */
+.tl-form-group {
+  border: 0;
+  padding: 0;
+  margin: 0 0 20px;
+}
+
+.tl-form-group:last-child {
+  margin-bottom: 0;
+}
+
+.tl-form-legend {
+  padding: 0 0 8px;
+  width: 100%;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.tl-form-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 130px) minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 7px 0;
+}
+
+.tl-form-label {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.tl-form-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+/* Explicit width: an input left to its intrinsic size is what broke the old
+   two-column grid. */
+.tl-form-input {
+  width: 92px;
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+/* A blank field is not empty, it is the published standard. The placeholder is
+   that number, so the field always shows what will actually be used. */
+.tl-form-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.tl-form-input:focus {
+  outline: none;
+  border-color: var(--brand-blue);
+  box-shadow: 0 0 0 3px var(--brand-blue-soft);
+}
+
+.tl-form-dash {
+  color: var(--color-text-tertiary);
+  font-size: 13px;
+}
+
+.tl-form-unit {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  /* Never uppercase a unit: CSS maps µ to a capital Mu, which renders as M. */
+  text-transform: none;
+}
+
+.tl-form-note {
+  font-size: 11.5px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+@media (max-width: 620px) {
+  .tl-form-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    padding: 9px 0;
+  }
+}
+
 /* ============ THRESHOLD LIST ============
    A reference sheet about published air-quality standards that happens to allow
    a rare override — not a settings form. Type stays quiet and the band bar is
