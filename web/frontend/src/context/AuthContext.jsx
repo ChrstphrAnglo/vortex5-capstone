@@ -5,12 +5,18 @@ export const AuthContext = createContext()
 export const authReducer = (state, action) => {
     switch (action.type) {
         case 'LOGIN':
-            return { user: action.payload }
+            return { ...state, user: action.payload }
         case 'LOGOUT':
-            return { user: null }
+            return { ...state, user: null }
+        // The stored session has been read (or found absent). Until this lands,
+        // `user` is null only because the check has not run yet — which is not
+        // the same as being logged out, and the router must not treat it as if
+        // it were. See `authReady` below.
+        case 'RESTORED':
+            return { user: action.payload, authReady: true }
         default:
             return state
-    } 
+    }
 }
 
 // Decodes a JWT's payload without verifying the signature (verification is
@@ -28,7 +34,13 @@ const isTokenExpired = (token) => {
 
 export const AuthContextProvider = ({ children }) => {
     const [state, dispatch] = useReducer(authReducer, {
-        user: null
+        user: null,
+        // False until the stored session has been read. The read happens in an
+        // effect, so it cannot finish before the first render — and on that
+        // first render every guarded route would otherwise see `user: null`,
+        // bounce to /login, and then bounce again to "/" once the session
+        // arrived. Refreshing any deep page therefore landed on the dashboard.
+        authReady: false
     })
 
     useEffect(()=> {
@@ -40,13 +52,17 @@ export const AuthContextProvider = ({ children }) => {
             localStorage.removeItem('user')
         }
 
-        if (user && user.token && !isTokenExpired(user.token)) {
-            dispatch({type: 'LOGIN', payload:user})
-        } else if (user) {
+        const valid = !!(user && user.token && !isTokenExpired(user.token))
+
+        if (user && !valid) {
             // Present but expired/malformed — don't leave the app "looking"
             // logged in while every real API call would 401.
             localStorage.removeItem('user')
         }
+
+        // One dispatch either way, so `authReady` is set exactly once and the
+        // router can start making decisions.
+        dispatch({type: 'RESTORED', payload: valid ? user : null})
     },[])
 
     return(

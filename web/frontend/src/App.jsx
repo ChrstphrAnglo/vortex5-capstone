@@ -27,9 +27,21 @@ import DeviceDetail from './pages/DeviceDetail.jsx';
 
 // Create a separate component for the routes (needs to be inside BrowserRouter)
 function AppRoutes() {
-  const { user } = useAuthContext()
+  const { user, authReady } = useAuthContext()
   const location = useLocation()
-  
+
+  // Hold every routing decision until the stored session has been read.
+  //
+  // Without this, refreshing a deep page bounced to the dashboard: on the very
+  // first render `user` is null because the effect that restores it has not run
+  // yet, so a guarded route redirected to /login, and /login then redirected to
+  // "/" the moment the session arrived. The destination was lost in between.
+  //
+  // Rendering nothing for that one frame is correct rather than merely quiet:
+  // there is no answer to "is this person allowed here" until the check runs.
+  if (!authReady) return null
+
+
   // Define public pages that should NOT have Navbar and Header
   const publicPages = ['/login', '/signup', '/verify-signup', '/forgot-password', '/reset-password']
   // "/" is the landing page (no app shell) for a logged-out visitor, but
