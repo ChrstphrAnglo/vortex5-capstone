@@ -163,10 +163,18 @@ const deleteAdvisory = async (req, res) => {
 
 /* ---------------- SET ACTIVE ---------------- */
 
-// Exactly one threshold row may be active. Alerting reads that row; if none is
-// marked, the code falls back to the newest row and then to sourced defaults.
+// At most one threshold row may be active, and none needs to be: with nothing
+// active, alerting uses the published standards. The admin UI is a switch, so
+// this endpoint both turns a row on and turns it off.
+//
+// PATCH /api/threshold/:id/active           -> turn this row on (others off)
+// PATCH /api/threshold/:id/active {active:false} -> turn this row off
+//
+// A missing body means "on", so callers written before the switch existed keep
+// working unchanged.
 const setActiveThreshold = async (req, res) => {
   const { id } = req.params
+  const activate = req.body?.active !== false
 
   try {
     const threshold = await Threshold.findById(id)
@@ -174,13 +182,17 @@ const setActiveThreshold = async (req, res) => {
       return res.status(404).json({ error: "Threshold not found" })
     }
 
-    await Threshold.updateMany({ _id: { $ne: id } }, { $set: { active: false } })
-    threshold.active = true
+    if (activate) {
+      await Threshold.updateMany({ _id: { $ne: id } }, { $set: { active: false } })
+    }
+    threshold.active = activate
     await threshold.save()
 
     logAudit({
       module: "Configuration",
-      action: `Set threshold "${threshold.label}" as the active alert threshold`,
+      action: activate
+        ? `Set threshold "${threshold.label}" as the active alert threshold`
+        : `Switched off threshold "${threshold.label}"; alerting is back on the published standards`,
       user: req.user?.email || "Unknown"
     })
 

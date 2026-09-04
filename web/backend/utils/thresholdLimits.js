@@ -2,8 +2,12 @@
 //
 // Precedence:
 //   1. the threshold row flagged `active` — an admin's deliberate choice
-//   2. the newest row, if no row is flagged (legacy data, pre-`active`)
-//   3. the canonical defaults from config/airQualityBands.js
+//   2. the canonical defaults from config/airQualityBands.js
+//
+// There is deliberately NO "fall back to the newest row" step. The admin UI
+// turns an override on and off with a switch, and off has to mean the
+// published standards; falling through to whichever row happened to be created
+// last would quietly re-apply the override the admin just switched off.
 //
 // Merging is field-by-field, so a null in the DB row falls through to the
 // canonical value. That is what makes the admin UI an OVERRIDE of the canonical
@@ -41,15 +45,13 @@ function mergeLimits(thresholdDoc) {
 
 /** The limits in force right now, plus which row (if any) supplied them. */
 async function resolveLimits() {
-  let doc = await ThresholdModel.findOne({ active: true }).lean()
-  let source = 'active'
+  const doc = await ThresholdModel.findOne({ active: true }).lean()
 
-  if (!doc) {
-    doc = await ThresholdModel.findOne().sort({ createdAt: -1 }).lean()
-    source = doc ? 'newest' : 'canonical'
+  return {
+    limits: mergeLimits(doc),
+    source: doc ? 'active' : 'canonical',
+    label: doc?.label ?? null,
   }
-
-  return { limits: mergeLimits(doc), source, label: doc?.label ?? null }
 }
 
 module.exports = { resolveLimits, mergeLimits, LIMIT_KEYS }

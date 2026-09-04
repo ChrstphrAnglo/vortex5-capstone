@@ -140,17 +140,29 @@ const Thresholds = () => {
 
   // Exactly one row drives alerting. Without this the newest row silently
   // won, so adding a row to experiment changed live alerting immediately.
-  const handleSetActive = async (id) => {
+  // Turning one override on turns any other off — at most one drives alerting.
+  // Turning the active one off leaves none active, and alerting goes back to
+  // the published standards.
+  const handleToggleActive = async (id, next) => {
     setRowError('')
     const res = await fetch(`/api/threshold/${id}/active`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${user?.token}` }
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${user?.token}`
+      },
+      body: JSON.stringify({ active: next })
     })
     if (res.ok) {
-      setThresholds(prev => prev.map(t => ({ ...t, active: t._id === id })))
+      setThresholds(prev =>
+        prev.map(t => ({ ...t, active: next ? t._id === id : t._id === id ? false : t.active }))
+      )
     } else {
       const json = await res.json().catch(() => ({}))
-      setRowError(json.error || 'Failed to set the active threshold.')
+      setRowError(
+        json.error ||
+          (next ? 'Failed to switch that override on.' : 'Failed to switch that override off.')
+      )
     }
   }
 
@@ -348,12 +360,20 @@ const Thresholds = () => {
       {/* One status line replaces the old paragraph, the IN FORCE badge, the
           "Published standards" heading and the "No overrides configured" line —
           four elements that all said the same thing. Reading is the common case
-          here, so adding an override is a secondary action beside it. */}
+          here, so adding an override is a secondary action beside it.
+
+          Three states, because "no override is switched on" and "no override
+          exists" are different situations and the reader needs to tell them
+          apart. */}
       <div className="tl-status">
         <p className="tl-status-text">
-          {activeRow
-            ? <>Alerting uses <strong>{activeRow.label}</strong>. Blank fields fall back to the published standard.</>
-            : <>Alerting uses the published standards below. No overrides set.</>}
+          {activeRow ? (
+            <>Alerting uses <strong>{activeRow.label}</strong>. Blank fields fall back to the published standard.</>
+          ) : thresholds.length > 0 ? (
+            <>Alerting uses the published standards below. {thresholds.length === 1 ? 'One override is' : `${thresholds.length} overrides are`} switched off.</>
+          ) : (
+            <>Alerting uses the published standards below. No overrides set.</>
+          )}
         </p>
         <button
           type="button"
@@ -369,15 +389,20 @@ const Thresholds = () => {
           <h3 className="tl-group-head"><span>Overrides</span></h3>
           {thresholds.map((t) => (
             <div className={`tl-override${t.active ? ' is-active' : ''}`} key={t._id}>
-              <label className="tl-override-pick">
-                <input
-                  type="radio"
-                  name="activeThreshold"
-                  checked={!!t.active}
-                  onChange={() => handleSetActive(t._id)}
-                />
-                <span>{t.active ? 'Alerting' : 'Use this'}</span>
-              </label>
+              {/* A switch, not a radio: a radio can only ever be turned on, and
+                  an admin needs to put alerting back on the published standards
+                  without deleting the override they spent time building. */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={!!t.active}
+                className="tl-switch"
+                onClick={() => handleToggleActive(t._id, !t.active)}
+                title={t.active ? 'Switch off and use the published standards' : 'Use this override for alerting'}
+              >
+                <span className="tl-switch-track"><span className="tl-switch-knob" /></span>
+                <span className="tl-switch-text">{t.active ? 'In use' : 'Off'}</span>
+              </button>
               <span className="tl-override-label">{t.label}</span>
               <span className="tl-override-count">
                 {overrideCount(t) === 0

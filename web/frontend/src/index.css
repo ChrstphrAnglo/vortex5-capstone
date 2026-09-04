@@ -1741,8 +1741,7 @@ input, select {
   color: var(--color-accent-strong);
 }
 
-.tl-status-action:focus-visible,
-.tl-override-pick input:focus-visible {
+.tl-status-action:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
@@ -1787,16 +1786,78 @@ input, select {
   color: var(--color-accent-strong);
 }
 
-.tl-override-pick {
+/* The override switch.
+
+   A radio could only ever be turned ON, which left no way to put alerting back
+   on the published standards short of deleting an override outright. This is a
+   real switch: on means this override drives alerting, off means the standards
+   do. role="switch" plus aria-checked carries that to a screen reader, and the
+   text beside it says which state it is in rather than relying on colour. */
+.tl-switch {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-tertiary);
+  gap: 9px;
+  padding: 4px;
+  background: none;
+  border: 0;
   cursor: pointer;
   white-space: nowrap;
 }
+
+.tl-switch-track {
+  position: relative;
+  width: 34px;
+  height: 19px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--color-border-strong);
+  transition: background var(--t-fast);
+}
+
+.tl-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  transition: transform var(--t-fast);
+}
+
+.tl-switch[aria-checked='true'] .tl-switch-track {
+  background: var(--color-accent);
+}
+
+.tl-switch[aria-checked='true'] .tl-switch-knob {
+  transform: translateX(15px);
+}
+
+.tl-switch-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+}
+
+.tl-switch[aria-checked='true'] .tl-switch-text {
+  color: var(--color-accent-strong);
+}
+
+.tl-switch:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Someone who has asked for less motion still needs to see the state change;
+   the colour and the label carry it without the knob sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .tl-switch-track,
+  .tl-switch-knob {
+    transition: none;
+  }
+}
+
 
 .tl-override-label {
   font-size: 14.5px;
