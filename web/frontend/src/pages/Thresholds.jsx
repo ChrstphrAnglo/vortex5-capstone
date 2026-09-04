@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAuthContext } from '../hooks/useAuthContext'
 import {
+  airQualityFields,
   airQualityLimitKeys,
   airQualityLimits,
   airQualitySource,
@@ -15,6 +16,15 @@ import {
 // a classroom that is too cold or too dry is a problem too, not just one that
 // is too hot or too humid.
 const FIELD_DEFS = airQualityLimitKeys()
+
+// The TABLE groups a two-sided field back into one column showing its range —
+// "23–30" reads as a range, whereas separate Min and Max columns pushed this to
+// fourteen columns of squeezed, overlapping headers.
+const COLUMNS = airQualityFields().map((f) =>
+  f.twoSided
+    ? { key: f.key, label: f.label, unit: f.unit, alerting: f.alerting, keys: [`${f.key}Min`, `${f.key}Max`] }
+    : { key: f.key, label: f.label, unit: f.unit, alerting: f.alerting, keys: [f.key] }
+)
 
 const EMPTY_FORM = Object.fromEntries([['label', ''], ...FIELD_DEFS.map(({ key }) => [key, ''])])
 
@@ -44,6 +54,14 @@ const Thresholds = () => {
   // Canonical values, shown as input placeholders so a blank field visibly
   // reads as "the standard applies here".
   const canonical = airQualityLimits()
+
+  // A two-sided field renders as a range ("23–30"); a one-sided one as a single
+  // number. Either way an absent override falls back to the canonical value, so
+  // a card always shows the limit actually in force rather than a blank.
+  const limitText = (row, col) =>
+    col.keys.map((k) => row?.[k] ?? canonical[k]).join('–')
+
+  const isOverridden = (row, col) => col.keys.some((k) => row?.[k] != null)
 
   useEffect(() => {
     const fetchThresholds = async () => {
@@ -277,60 +295,73 @@ const Thresholds = () => {
         raising a separate alert.
       </p>
 
-      <div className="table-card">
-        <table className="modern-table">
-          <thead>
-            <tr>
-              <th>Active</th>
-              <th>Label</th>
-              {FIELD_DEFS.map(({ key, label, unit }) => (
-                <th key={key}>{label}{unit ? ` (${unit})` : ''}</th>
+      {/* Cards, not a table: there are nine limit fields but usually only one
+          row, so a row-per-record table meant twelve columns for one record and
+          scrolled sideways at any window size. */}
+      <div className="threshold-cards">
+        {thresholds.map(t => (
+          <article key={t._id} className={`threshold-card${t.active ? ' is-active' : ''}`}>
+            <header className="threshold-card-head">
+              <label className="threshold-active">
+                <input
+                  type="radio"
+                  name="activeThreshold"
+                  checked={!!t.active}
+                  onChange={() => handleSetActive(t._id)}
+                />
+                <span>{t.active ? 'Active' : 'Use for alerting'}</span>
+              </label>
+
+              <h4 className="threshold-card-title">{t.label}</h4>
+
+              <div className="action-buttons">
+                <button className="icon-btn edit-btn" onClick={() => handleEdit(t)} title="Edit">
+                  <Pencil size={18} />
+                </button>
+                <button className="icon-btn danger-btn" onClick={() => handleDelete(t._id)} title="Delete">
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            </header>
+
+            <dl className="threshold-limits">
+              {COLUMNS.map((col) => (
+                <div className="threshold-limit" key={col.key}>
+                  <dt>{col.label}</dt>
+                  {/* Greyed means "no override here" — the standard is in force,
+                      not that the value is missing. */}
+                  <dd className={isOverridden(t, col) ? '' : 'is-standard'}>
+                    {limitText(t, col)}
+                    {col.unit && <span className="threshold-unit">{col.unit}</span>}
+                  </dd>
+                </div>
               ))}
-              <th>Actions</th>
-            </tr>
-          </thead>
+            </dl>
+          </article>
+        ))}
 
-          <tbody>
-            {thresholds.map(t => (
-              <tr key={t._id}>
-                <td>
-                  <input
-                    type="radio"
-                    name="activeThreshold"
-                    checked={!!t.active}
-                    onChange={() => handleSetActive(t._id)}
-                    title="Use this row for alerting"
-                  />
-                </td>
-                <td>{t.label}</td>
-                {/* A blank cell is not "unset" — it is the standard value in force. */}
-                {FIELD_DEFS.map(({ key }) => (
-                  <td key={key}>
-                    {t[key] ?? <span className="field-note">{canonical[key]}</span>}
-                  </td>
-                ))}
-                <td>
-                  <div className="action-buttons">
-                    <button className="icon-btn edit-btn" onClick={() => handleEdit(t)}>
-                      <Pencil size={18} />
-                    </button>
-                    <button className="icon-btn danger-btn" onClick={() => handleDelete(t._id)}>
-                      <Trash2 size={18} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-
-            {thresholds.length === 0 && (
-              <tr>
-                <td colSpan={FIELD_DEFS.length + 3} style={{ textAlign: 'center', padding: '15px' }}>
-                  No thresholds configured — the standards below are in force
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+        {thresholds.length === 0 && (
+          <article className="threshold-card is-active">
+            <header className="threshold-card-head">
+              <span className="threshold-badge">In force</span>
+              <h4 className="threshold-card-title">Published standards</h4>
+            </header>
+            <p className="threshold-hint" style={{ margin: '4px 0 0' }}>
+              No overrides configured. These are the values alerting uses.
+            </p>
+            <dl className="threshold-limits">
+              {COLUMNS.map((col) => (
+                <div className="threshold-limit" key={col.key}>
+                  <dt>{col.label}</dt>
+                  <dd>
+                    {limitText(null, col)}
+                    {col.unit && <span className="threshold-unit">{col.unit}</span>}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+        )}
       </div>
 
       <p className="threshold-hint" style={{ marginTop: 12 }}>

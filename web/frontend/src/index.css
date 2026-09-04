@@ -1587,6 +1587,117 @@ input, select {
   background-color: var(--color-surface-2);
 }
 
+/* ============ THRESHOLD CARDS ============
+   One card per threshold row. This was a table, but there are nine limit
+   fields and normally a single row, so it rendered twelve columns for one
+   record and scrolled sideways at every window size. A card with a wrapping
+   grid of limits fits any width and puts the Active row where the eye lands. */
+.threshold-cards {
+  display: grid;
+  gap: 16px;
+  margin-top: 15px;
+}
+
+.threshold-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  padding: 18px 20px;
+}
+
+/* The row alerting actually uses. Worth more than a checked radio button. */
+.threshold-card.is-active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent-soft), var(--shadow-xs);
+}
+
+.threshold-card-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.threshold-card-title {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.threshold-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.threshold-card.is-active .threshold-active {
+  color: var(--color-accent-strong);
+}
+
+.threshold-badge {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.threshold-limits {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 14px 22px;
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.threshold-limit dt {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-text-tertiary);
+}
+
+.threshold-limit dd {
+  margin: 3px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* Greyed = no override on this field, so the published standard applies.
+   It does NOT mean the value is unset. */
+.threshold-limit dd.is-standard {
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+}
+
+/* Units must NEVER inherit a text-transform: uppercase. CSS uppercases
+   µ (U+00B5 MICRO SIGN) to Μ (Greek capital Mu), which renders as an M — so
+   "µg/m³" becomes "MG/M³" and reads as milligrams, a thousand times the real
+   value. That is exactly the bug the old table header had. */
+.threshold-unit {
+  margin-left: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--color-text-tertiary);
+}
+
 
 
 /* ================= USER & ROLE STYLES ================= */
