@@ -1177,21 +1177,20 @@ input, select {
 
 /* configuration threshold */
 
-.threshold-box {
-  border: 1px solid #ddd;
-  padding: 24px 28px;
-  border-radius: 12px;
-  max-width: 760px;
-  background: #fafafa;
-  margin-bottom: 32px;
-}
-
-.threshold-box h3 {
-  margin-bottom: 20px;
-  font-size: 1.15rem;
-}
-
 /* Grid spacing */
+.threshold-hint {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  max-width: 62ch;
+}
+
+.field-note {
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}
+
 .threshold-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1246,35 +1245,7 @@ input, select {
   background: #1976d2;
 }
 
-/* existing thresholds card */
-.threshold-card {
-  border: 1px solid #ddd;
-  padding: 16px;
-  border-radius: 10px;
-  margin-bottom: 16px;
-  background: #fff;
-}
-
-/* grid preview (view mode) */
-.threshold-preview {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px 24px;
-  margin-top: 12px;
-  font-size: 0.9rem;
-}
-
-.threshold-preview span {
-  font-weight: 500;
-  margin-left: 4px;
-}
-
 /* header */
-.threshold-header {
-  font-size: 1rem;
-  margin-bottom: 8px;
-}
-
 /* action buttons */
 .action-row {
   display: flex;
@@ -1587,118 +1558,297 @@ input, select {
   background-color: var(--color-surface-2);
 }
 
-/* ============ THRESHOLD CARDS ============
-   One card per threshold row. This was a table, but there are nine limit
-   fields and normally a single row, so it rendered twelve columns for one
-   record and scrolled sideways at every window size. A card with a wrapping
-   grid of limits fits any width and puts the Active row where the eye lands. */
-.threshold-cards {
-  display: grid;
-  gap: 16px;
-  margin-top: 15px;
+/* ============ THRESHOLD LIST ============
+   A reference sheet about published air-quality standards that happens to allow
+   a rare override — not a settings form. Type stays quiet and the band bar is
+   the one element carrying weight.
+
+   Every colour here is a token or a band colour served by the API. No literals:
+   this page has produced dark-mode contrast bugs from hardcoded hex before. */
+
+/* ---- status line ---- */
+.tl-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin: 4px 0 26px;
 }
 
-.threshold-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xs);
-  padding: 18px 20px;
+.tl-status-text {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  max-width: 68ch;
 }
 
-/* The row alerting actually uses. Worth more than a checked radio button. */
-.threshold-card.is-active {
+.tl-status-text strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+/* Secondary by design: reading these limits is the common case, adding an
+   override is rare, so the action does not compete with the content. */
+.tl-status-action {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.tl-status-action:hover {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 1px var(--color-accent-soft), var(--shadow-xs);
+  color: var(--color-accent-strong);
 }
 
-.threshold-card-head {
+.tl-status-action:focus-visible,
+.tl-override-pick input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* ---- group headings ----
+   A hairline running to the right margin marks the section. It encodes
+   structure, so it earns its place; this is deliberately not the tracked-out
+   all-caps eyebrow used elsewhere in the app. */
+.tl-group-head {
   display: flex;
   align-items: center;
   gap: 14px;
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.tl-group-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.tl-group,
+.tl-overrides {
+  margin-bottom: 30px;
+}
+
+/* ---- override rows ---- */
+.tl-override {
+  display: flex;
+  align-items: center;
+  gap: 16px;
   flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
-.threshold-card-title {
-  margin: 0;
-  flex: 1 1 auto;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--color-text-primary);
+.tl-override.is-active .tl-override-label {
+  color: var(--color-accent-strong);
 }
 
-.threshold-active {
+.tl-override-pick {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--color-text-secondary);
+  color: var(--color-text-tertiary);
   cursor: pointer;
   white-space: nowrap;
 }
 
-.threshold-card.is-active .threshold-active {
-  color: var(--color-accent-strong);
-}
-
-.threshold-badge {
-  background: var(--color-accent-soft);
-  color: var(--color-accent-strong);
-  border-radius: 999px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.threshold-limits {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 14px 22px;
-  margin: 16px 0 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--color-border-subtle);
-}
-
-.threshold-limit dt {
-  font-size: 11px;
+.tl-override-label {
+  font-size: 14.5px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--color-text-tertiary);
-}
-
-.threshold-limit dd {
-  margin: 3px 0 0;
-  font-size: 15px;
-  font-weight: 700;
   color: var(--color-text-primary);
 }
 
-/* Greyed = no override on this field, so the published standard applies.
-   It does NOT mean the value is unset. */
-.threshold-limit dd.is-standard {
+.tl-override-count {
+  flex: 1;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+/* ---- one field ---- */
+.tl-row {
+  display: grid;
+  grid-template-columns: minmax(190px, 230px) minmax(0, 1fr);
+  gap: 8px 34px;
+  align-items: center;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.tl-row:last-child {
+  border-bottom: 0;
+}
+
+.tl-name {
+  margin: 0;
+  font-size: 14.5px;
   font-weight: 600;
-  color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
 }
 
-/* Units must NEVER inherit a text-transform: uppercase. CSS uppercases
-   µ (U+00B5 MICRO SIGN) to Μ (Greek capital Mu), which renders as an M — so
-   "µg/m³" becomes "MG/M³" and reads as milligrams, a thousand times the real
-   value. That is exactly the bug the old table header had. */
-.threshold-unit {
-  margin-left: 4px;
-  font-size: 11.5px;
+.tl-value {
+  margin: 2px 0 0;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--color-text-primary);
+  /* Figures line up down the column; this is reference data. */
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-unit {
+  margin-left: 5px;
+  font-size: 12px;
   font-weight: 500;
-  text-transform: none;
-  letter-spacing: 0;
   color: var(--color-text-tertiary);
+  /* Never uppercase a unit: CSS maps µ to a capital Mu, which renders as an M,
+     so "µg/m³" would read as milligrams — a thousand times the real value. */
+  text-transform: none;
 }
 
+.tl-caption {
+  margin: 5px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--color-text-tertiary);
+  max-width: 34ch;
+}
 
+.tl-overridden {
+  color: var(--color-accent-strong);
+  font-weight: 600;
+}
+
+/* ---- the band bar ---- */
+.tl-scale {
+  min-width: 0;
+  /* Room for the marker values, which sit above the bar. */
+  padding-top: 17px;
+}
+
+.tl-bar {
+  position: relative;
+  display: flex;
+  height: 30px;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+/* The band colour, softened against the page so thirty of these do not shout.
+   color-mix keeps it correct in both themes because it blends toward whatever
+   --color-surface currently is; browsers without it keep the solid band colour,
+   which is still legible. */
+.tl-zone {
+  position: relative;
+  flex-basis: 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  background: var(--zone);
+  background: color-mix(in srgb, var(--zone) 24%, var(--color-surface));
+  border-right: 1px solid var(--color-surface);
+}
+
+.tl-zone:last-child {
+  border-right: 0;
+}
+
+.tl-zone-name {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+/* The alert threshold: the one high-contrast mark on the page. */
+.tl-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-text-primary);
+}
+
+.tl-mark-value {
+  position: absolute;
+  bottom: calc(100% + 3px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- band edge labels ---- */
+.tl-edges {
+  position: relative;
+  height: 15px;
+  margin-top: 5px;
+}
+
+/* Fields with more than four boundaries stagger onto two lines, which removes
+   collisions without measuring any text. */
+.tl-edges.is-staggered {
+  height: 28px;
+}
+
+.tl-edge {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 10.5px;
+  color: var(--color-text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tl-edges.is-staggered .tl-edge-r1 {
+  top: 13px;
+}
+
+/* ---- tablet ----
+   The bar drops below the identity block and runs full width, which it needs
+   more than the name does. */
+@media (max-width: 900px) {
+  .tl-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 20px 0;
+  }
+
+  .tl-caption {
+    max-width: none;
+  }
+
+  .tl-zone-name {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 560px) {
+  .tl-zone-name {
+    display: none;
+  }
+}
 
 /* ================= USER & ROLE STYLES ================= */
 .user-name {

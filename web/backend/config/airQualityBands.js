@@ -147,6 +147,8 @@ const FIELDS = {
   Aqi: {
     label: 'AQI',
     unit: '',
+    group: 'particulates',
+    citation: 'DENR AO 2020-14',
     alerting: true,
     twoSided: false,
     derived: false,
@@ -169,6 +171,8 @@ const FIELDS = {
   // boundary) and not 25 — at 25 PM1 could alert before the AQI does, which
   // would be a louder claim than the data supports.
   PM1: {
+    group: 'particulates',
+    citation: 'DENR AO 2020-14, as proxy',
     label: 'PM 1.0',
     unit: 'µg/m³',
     alerting: true,
@@ -188,6 +192,8 @@ const FIELDS = {
 
   // Source: DENR Administrative Order 2020-14, 24-hour averaging, µg/Nm³.
   PM25: {
+    group: 'particulates',
+    citation: 'DENR AO 2020-14',
     label: 'PM 2.5',
     unit: 'µg/m³',
     // No separate alert: PM2.5 already drives the AQI, and alerting on both
@@ -210,6 +216,8 @@ const FIELDS = {
 
   // Source: DENR Administrative Order 2020-14, 24-hour averaging, µg/Nm³.
   PM10: {
+    group: 'particulates',
+    citation: 'DENR AO 2020-14',
     label: 'PM 10',
     unit: 'µg/m³',
     alerting: false, // see PM25 — folded into the AQI alert
@@ -237,6 +245,8 @@ const FIELDS = {
   // the 300 µg/m³ frontend "Good" cutoff were two different inventions of the
   // same non-existent standard; both are gone.
   TVOC: {
+    group: 'gases',
+    citation: 'Seifert 1990 / Mølhave 1997',
     label: 'TVOC',
     unit: 'µg/m³',
     alerting: true,
@@ -269,6 +279,8 @@ const FIELDS = {
   // DERIVED VALUE — simulated by the FS00905B from its VOC element, not
   // measured with an NDIR cell. Treat as a trend indicator only.
   CO2: {
+    group: 'gases',
+    citation: 'ASHRAE indoor CO₂ position document',
     label: 'CO₂',
     unit: 'ppm',
     alerting: true,
@@ -298,6 +310,8 @@ const FIELDS = {
   //
   // DERIVED VALUE — like CO2, simulated from the VOC element.
   Formaldehyde: {
+    group: 'gases',
+    citation: 'WHO IAQ guidelines 2010',
     label: 'Formaldehyde',
     unit: 'µg/m³',
     alerting: true,
@@ -322,6 +336,8 @@ const FIELDS = {
   // a naturally ventilated Manila classroom it marks every normal school day
   // as unacceptable, which is what made this dashboard permanently red.
   Temperature: {
+    group: 'comfort',
+    citation: 'ASHRAE 55 adaptive comfort',
     label: 'Temperature',
     unit: '°C',
     alerting: true,
@@ -359,6 +375,8 @@ const FIELDS = {
   // The 5-point gap is deliberate hysteresis; 70 % remains the cited
   // mould-risk boundary on screen.
   Humidity: {
+    group: 'comfort',
+    citation: 'WHO Dampness and Mould 2009',
     label: 'Humidity',
     unit: '%',
     alerting: true,
@@ -375,6 +393,15 @@ const FIELDS = {
     ],
   },
 }
+
+// Display groups for the admin UI. Membership comes from each field own
+// `group` key rather than a list here, so a new field lands in a section
+// without anyone editing the dashboard.
+const FIELD_GROUPS = [
+  { key: 'particulates', label: 'Particulates' },
+  { key: 'gases',        label: 'Gases' },
+  { key: 'comfort',      label: 'Comfort' },
+]
 
 // Order matters for the admin UI and the API payload.
 const FIELD_ORDER = ['Aqi', 'PM1', 'PM25', 'PM10', 'TVOC', 'CO2', 'Formaldehyde', 'Temperature', 'Humidity']
@@ -462,6 +489,7 @@ module.exports = {
   COLORS,
   AQI_CATEGORIES,
   FIELDS,
+  FIELD_GROUPS,
   FIELD_ORDER,
   ALERTING_FIELDS,
   TWO_SIDED_FIELDS,

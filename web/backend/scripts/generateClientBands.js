@@ -35,6 +35,10 @@ const serializeField = (key) => {
     key,
     label: f.label,
     unit: f.unit,
+    // Presentation metadata: which section of the admin UI this belongs in,
+    // and the short form of the standard behind its numbers.
+    group: f.group,
+    citation: f.citation,
     alerting: f.alerting,
     twoSided: f.twoSided,
     derived: f.derived,
@@ -48,6 +52,7 @@ const serializeField = (key) => {
 const payload = {
   _generated: 'DO NOT EDIT BY HAND. Regenerate: node scripts/generateClientBands.js',
   categories: bands.AQI_CATEGORIES,
+  groups: bands.FIELD_GROUPS,
   fields: bands.FIELD_ORDER.map(serializeField),
   alertingFields: bands.ALERTING_FIELDS,
   // Canonical limits only. The live endpoint serves the resolved set (an active

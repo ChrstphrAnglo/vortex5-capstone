@@ -65,11 +65,27 @@
       ]
     }
   ],
+  "groups": [
+    {
+      "key": "particulates",
+      "label": "Particulates"
+    },
+    {
+      "key": "gases",
+      "label": "Gases"
+    },
+    {
+      "key": "comfort",
+      "label": "Comfort"
+    }
+  ],
   "fields": [
     {
       "key": "Aqi",
       "label": "AQI",
       "unit": "",
+      "group": "particulates",
+      "citation": "DENR AO 2020-14",
       "alerting": true,
       "twoSided": false,
       "derived": false,
@@ -125,6 +141,8 @@
       "key": "PM1",
       "label": "PM 1.0",
       "unit": "µg/m³",
+      "group": "particulates",
+      "citation": "DENR AO 2020-14, as proxy",
       "alerting": true,
       "twoSided": false,
       "derived": false,
@@ -180,6 +198,8 @@
       "key": "PM25",
       "label": "PM 2.5",
       "unit": "µg/m³",
+      "group": "particulates",
+      "citation": "DENR AO 2020-14",
       "alerting": false,
       "twoSided": false,
       "derived": false,
@@ -235,6 +255,8 @@
       "key": "PM10",
       "label": "PM 10",
       "unit": "µg/m³",
+      "group": "particulates",
+      "citation": "DENR AO 2020-14",
       "alerting": false,
       "twoSided": false,
       "derived": false,
@@ -290,6 +312,8 @@
       "key": "TVOC",
       "label": "TVOC",
       "unit": "µg/m³",
+      "group": "gases",
+      "citation": "Seifert 1990 / Mølhave 1997",
       "alerting": true,
       "twoSided": false,
       "derived": false,
@@ -345,6 +369,8 @@
       "key": "CO2",
       "label": "CO₂",
       "unit": "ppm",
+      "group": "gases",
+      "citation": "ASHRAE indoor CO₂ position document",
       "alerting": true,
       "twoSided": false,
       "derived": true,
@@ -379,6 +405,8 @@
       "key": "Formaldehyde",
       "label": "Formaldehyde",
       "unit": "µg/m³",
+      "group": "gases",
+      "citation": "WHO IAQ guidelines 2010",
       "alerting": true,
       "twoSided": false,
       "derived": true,
@@ -413,6 +441,8 @@
       "key": "Temperature",
       "label": "Temperature",
       "unit": "°C",
+      "group": "comfort",
+      "citation": "ASHRAE 55 adaptive comfort",
       "alerting": true,
       "twoSided": true,
       "derived": false,
@@ -461,6 +491,8 @@
       "key": "Humidity",
       "label": "Humidity",
       "unit": "%",
+      "group": "comfort",
+      "citation": "WHO Dampness and Mould 2009",
       "alerting": true,
       "twoSided": true,
       "derived": false,

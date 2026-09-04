@@ -74,6 +74,18 @@ export function airQualityFields() {
 }
 
 /**
+ * The served display groups, each with the fields that belong to it.
+ * Membership comes from each field's own `group` key, so adding a field to the
+ * canonical table places it in a section without this page being touched.
+ */
+export function airQualityFieldGroups() {
+  const groups = BANDS.groups ?? []
+  return groups
+    .map((g) => ({ ...g, fields: BANDS.fields.filter((f) => f.group === g.key) }))
+    .filter((g) => g.fields.length > 0)
+}
+
+/**
  * The editable limit keys, flattened the way the thresholds collection stores
  * them: a scalar per one-sided field, Min/Max for the two-sided ones.
  * Returns [{ key, field, label, unit, alerting, bound }].

@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAuthContext } from '../hooks/useAuthContext'
 import {
-  airQualityFields,
+  airQualityFieldGroups,
   airQualityLimitKeys,
   airQualityLimits,
-  airQualitySource,
 } from '../utils/airQualityGuidance'
+import { buildScale, edgeLabels, alertMarkers } from '../utils/bandScale'
 
 // The form is built from the canonical band table the backend serves, not from
 // a hand-maintained list here — adding a field to the canonical table cannot
@@ -17,13 +17,28 @@ import {
 // is too hot or too humid.
 const FIELD_DEFS = airQualityLimitKeys()
 
-// The TABLE groups a two-sided field back into one column showing its range —
-// "23–30" reads as a range, whereas separate Min and Max columns pushed this to
-// fourteen columns of squeezed, overlapping headers.
-const COLUMNS = airQualityFields().map((f) =>
-  f.twoSided
-    ? { key: f.key, label: f.label, unit: f.unit, alerting: f.alerting, keys: [`${f.key}Min`, `${f.key}Max`] }
-    : { key: f.key, label: f.label, unit: f.unit, alerting: f.alerting, keys: [f.key] }
+// The read view is grouped by the served `group` key, so a field added to the
+// canonical table appears in its section without this page changing.
+const GROUPS = airQualityFieldGroups()
+
+// Which stored limit keys a field owns. Two-sided fields own a Min/Max pair.
+const keysOf = (f) => (f.twoSided ? [`${f.key}Min`, `${f.key}Max`] : [f.key])
+
+// The caption under each value: where the number comes from, then any way this
+// field departs from the norm. Both are read from the served metadata rather
+// than a list of field names kept here, which would drift.
+const captionOf = (f) =>
+  [
+    f.citation,
+    !f.alerting && 'reported through AQI, no separate alert',
+    f.derived && 'simulated by the sensor, not measured',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+// Pre-computed once: the geometry never changes, only which limits sit on it.
+const SCALES = Object.fromEntries(
+  GROUPS.flatMap((g) => g.fields).map((f) => [f.key, buildScale(f)])
 )
 
 const EMPTY_FORM = Object.fromEntries([['label', ''], ...FIELD_DEFS.map(({ key }) => [key, ''])])
@@ -55,13 +70,28 @@ const Thresholds = () => {
   // reads as "the standard applies here".
   const canonical = airQualityLimits()
 
-  // A two-sided field renders as a range ("23–30"); a one-sided one as a single
-  // number. Either way an absent override falls back to the canonical value, so
-  // a card always shows the limit actually in force rather than a blank.
-  const limitText = (row, col) =>
-    col.keys.map((k) => row?.[k] ?? canonical[k]).join('–')
+  // The row alerting actually uses: the one marked active, else none. Values
+  // fall back key by key, so a partial override shows its own numbers for the
+  // fields it sets and the published standard for the rest.
+  const activeRow = thresholds.find((t) => t.active) || null
 
-  const isOverridden = (row, col) => col.keys.some((k) => row?.[k] != null)
+  const limitsInForce = { ...canonical }
+  if (activeRow) {
+    for (const key of FIELD_DEFS.map((d) => d.key)) {
+      if (activeRow[key] != null) limitsInForce[key] = activeRow[key]
+    }
+  }
+
+  // A two-sided field renders as a range ("23–30"); a one-sided one as a single
+  // number.
+  const limitText = (f) => keysOf(f).map((k) => limitsInForce[k]).join('–')
+
+  const isOverridden = (f) => keysOf(f).some((k) => activeRow?.[k] != null)
+
+  // How many limits a row actually sets — the useful thing to know about an
+  // override at a glance.
+  const overrideCount = (row) =>
+    FIELD_DEFS.filter(({ key }) => row[key] != null).length
 
   useEffect(() => {
     const fetchThresholds = async () => {
@@ -188,10 +218,7 @@ const Thresholds = () => {
   return (
     <div className="configuration">
       <div className="section-header">
-        <h2 className="page-title">Configure Thresholds</h2>
-        <button className="add-btn" onClick={() => { setAddError(''); setShowModal(true) }}>
-          + Add Threshold
-        </button>
+        <h2 className="page-title">Air quality thresholds</h2>
       </div>
 
       {loadError && <p style={{ color: 'red', marginTop: 10 }}>{loadError}</p>}
@@ -282,91 +309,125 @@ const Thresholds = () => {
         </div>
       )}
 
-      <hr />
+      {/* One status line replaces the old paragraph, the IN FORCE badge, the
+          "Published standards" heading and the "No overrides configured" line —
+          four elements that all said the same thing. Reading is the common case
+          here, so adding an override is a secondary action beside it. */}
+      <div className="tl-status">
+        <p className="tl-status-text">
+          {activeRow
+            ? <>Alerting uses <strong>{activeRow.label}</strong>. Blank fields fall back to the published standard.</>
+            : <>Alerting uses the published standards below. No overrides set.</>}
+        </p>
+        <button
+          type="button"
+          className="tl-status-action"
+          onClick={() => { setAddError(''); setShowModal(true) }}
+        >
+          Add override
+        </button>
+      </div>
 
-      <h3>Existing Thresholds</h3>
-      <p className="threshold-hint">
-        Alerting uses the row marked <strong>Active</strong>, with any blank field
-        falling back to the standard. With no row selected the standards apply on
-        their own — AQI {canonical.Aqi}, CO₂ {canonical.CO2} ppm, TVOC {canonical.TVOC} µg/m³,
-        temperature {canonical.TemperatureMin}–{canonical.TemperatureMax} °C,
-        humidity {canonical.HumidityMin}–{canonical.HumidityMax} %.
-        Rows marked <em>feeds AQI</em> are reported through the AQI rather than
-        raising a separate alert.
-      </p>
-
-      {/* Cards, not a table: there are nine limit fields but usually only one
-          row, so a row-per-record table meant twelve columns for one record and
-          scrolled sideways at any window size. */}
-      <div className="threshold-cards">
-        {thresholds.map(t => (
-          <article key={t._id} className={`threshold-card${t.active ? ' is-active' : ''}`}>
-            <header className="threshold-card-head">
-              <label className="threshold-active">
+      {thresholds.length > 0 && (
+        <section className="tl-overrides">
+          <h3 className="tl-group-head"><span>Overrides</span></h3>
+          {thresholds.map((t) => (
+            <div className={`tl-override${t.active ? ' is-active' : ''}`} key={t._id}>
+              <label className="tl-override-pick">
                 <input
                   type="radio"
                   name="activeThreshold"
                   checked={!!t.active}
                   onChange={() => handleSetActive(t._id)}
                 />
-                <span>{t.active ? 'Active' : 'Use for alerting'}</span>
+                <span>{t.active ? 'Alerting' : 'Use this'}</span>
               </label>
-
-              <h4 className="threshold-card-title">{t.label}</h4>
-
+              <span className="tl-override-label">{t.label}</span>
+              <span className="tl-override-count">
+                {overrideCount(t) === 0
+                  ? 'no limits set, standards apply'
+                  : `${overrideCount(t)} of ${FIELD_DEFS.length} limits set`}
+              </span>
               <div className="action-buttons">
-                <button className="icon-btn edit-btn" onClick={() => handleEdit(t)} title="Edit">
+                <button className="icon-btn edit-btn" onClick={() => handleEdit(t)} title="Edit override">
                   <Pencil size={18} />
                 </button>
-                <button className="icon-btn danger-btn" onClick={() => handleDelete(t._id)} title="Delete">
+                <button className="icon-btn danger-btn" onClick={() => handleDelete(t._id)} title="Delete override">
                   <Trash2 size={18} />
                 </button>
               </div>
-            </header>
+            </div>
+          ))}
+        </section>
+      )}
 
-            <dl className="threshold-limits">
-              {COLUMNS.map((col) => (
-                <div className="threshold-limit" key={col.key}>
-                  <dt>{col.label}</dt>
-                  {/* Greyed means "no override here" — the standard is in force,
-                      not that the value is missing. */}
-                  <dd className={isOverridden(t, col) ? '' : 'is-standard'}>
-                    {limitText(t, col)}
-                    {col.unit && <span className="threshold-unit">{col.unit}</span>}
-                  </dd>
+      {GROUPS.map((group) => (
+        <section className="tl-group" key={group.key}>
+          <h3 className="tl-group-head"><span>{group.label}</span></h3>
+
+          {group.fields.map((f) => {
+            const scale = SCALES[f.key]
+            const labels = edgeLabels(f, scale)
+            const markers = alertMarkers(f, scale, limitsInForce)
+            const overridden = isOverridden(f)
+
+            return (
+              <article className="tl-row" key={f.key}>
+                <div className="tl-id">
+                  <h4 className="tl-name">{f.label}</h4>
+                  <p className="tl-value">
+                    {limitText(f)}
+                    {f.unit && <span className="tl-unit">{f.unit}</span>}
+                  </p>
+                  <p className="tl-caption">
+                    {captionOf(f)}
+                    {overridden && <span className="tl-overridden"> · overridden</span>}
+                  </p>
                 </div>
-              ))}
-            </dl>
-          </article>
-        ))}
 
-        {thresholds.length === 0 && (
-          <article className="threshold-card is-active">
-            <header className="threshold-card-head">
-              <span className="threshold-badge">In force</span>
-              <h4 className="threshold-card-title">Published standards</h4>
-            </header>
-            <p className="threshold-hint" style={{ margin: '4px 0 0' }}>
-              No overrides configured. These are the values alerting uses.
-            </p>
-            <dl className="threshold-limits">
-              {COLUMNS.map((col) => (
-                <div className="threshold-limit" key={col.key}>
-                  <dt>{col.label}</dt>
-                  <dd>
-                    {limitText(null, col)}
-                    {col.unit && <span className="threshold-unit">{col.unit}</span>}
-                  </dd>
+                {/* The bar supplements the number, so it carries no information
+                    a screen reader needs beyond the value already announced. */}
+                <div className="tl-scale" aria-hidden="true">
+                  <div className="tl-bar">
+                    {scale.zones.map((z, i) => (
+                      <span
+                        className="tl-zone"
+                        key={i}
+                        style={{ '--zone': z.band.color, flexGrow: z.share }}
+                      >
+                        <span className="tl-zone-name">{z.band.level}</span>
+                      </span>
+                    ))}
+
+                    {markers.map((m) => (
+                      <span
+                        className="tl-mark"
+                        key={m.kind}
+                        style={{ left: `${m.pos * 100}%` }}
+                      >
+                        <span className="tl-mark-value">{m.text}</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  <div className={`tl-edges${labels.some((l) => l.row) ? ' is-staggered' : ''}`}>
+                    {labels.map((l) => (
+                      <span
+                        className={`tl-edge tl-edge-r${l.row}`}
+                        key={l.value}
+                        style={{ left: `${l.pos * 100}%` }}
+                      >
+                        {l.text}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </dl>
-          </article>
-        )}
-      </div>
+              </article>
+            )
+          })}
+        </section>
+      ))}
 
-      <p className="threshold-hint" style={{ marginTop: 12 }}>
-        Standards: {airQualitySource()}
-      </p>
     </div>
   )
 }

@@ -19,6 +19,10 @@ const serializeField = (key) => {
     key,
     label: f.label,
     unit: f.unit,
+    // Presentation metadata: which section of the admin UI this belongs in,
+    // and the short form of the standard behind its numbers.
+    group: f.group,
+    citation: f.citation,
     alerting: f.alerting,
     twoSided: f.twoSided,
     // The FS00905B simulates CO2 and formaldehyde from its VOC element rather
@@ -52,6 +56,7 @@ const getBands = async (req, res) => {
 
     res.status(200).json({
       categories: bands.AQI_CATEGORIES,
+      groups: bands.FIELD_GROUPS,
       fields: bands.FIELD_ORDER.map(serializeField),
       alertingFields: bands.ALERTING_FIELDS,
       limits: resolved.limits,
