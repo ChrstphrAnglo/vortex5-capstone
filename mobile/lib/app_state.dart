@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:vortex5_application_2/models/alert_item.dart';
 import 'package:vortex5_application_2/models/sensor_device.dart';
 import 'package:vortex5_application_2/models/user_session.dart';
+import 'package:vortex5_application_2/services/air_quality_bands.dart';
 import 'package:vortex5_application_2/services/local_storage_service.dart';
 import 'package:vortex5_application_2/services/notification_service.dart';
 
@@ -32,9 +33,18 @@ class AppState extends ChangeNotifier {
   DateTime _lastUpdated = DateTime.now();
   bool _hasShownPopup = false;
   bool _notificationsEnabled = true;
+
+  // Alert limits. These used to be hardcoded per install (100 / 40 / 1000) and
+  // disagreed with both the backend and the web dashboard. They now DEFAULT to
+  // the canonical values the server publishes, and a knob only stops tracking
+  // the server once the user deliberately changes it — recorded in
+  // [_thresholdOverrides] so an untouched knob keeps following the standard.
   double _aqiThreshold = 100;
   double _pm25Threshold = 40;
   double _co2Threshold = 1000;
+  final Set<String> _thresholdOverrides = {};
+
+  AirQualityBands? _bands;
 
   Timer? _refreshTimer;
 
@@ -48,6 +58,12 @@ class AppState extends ChangeNotifier {
   double get aqiThreshold => _aqiThreshold;
   double get pm25Threshold => _pm25Threshold;
   double get co2Threshold => _co2Threshold;
+
+  /// The canonical band table, or null until the first fetch lands.
+  AirQualityBands? get bands => _bands;
+
+  /// True when this limit is still tracking the published standard.
+  bool usesServerDefault(String key) => !_thresholdOverrides.contains(key);
   bool get notificationsEnabled => _notificationsEnabled;
   int get unreadAlertCount => _alertHistory.where((a) => !a.isRead).length;
   bool get hasUnreadAlerts => unreadAlertCount > 0;
@@ -117,8 +133,31 @@ class AppState extends ChangeNotifier {
         _co2Threshold;
     _notificationsEnabled =
         settings['notificationsEnabled'] as bool? ?? _notificationsEnabled;
+    for (final key in (settings['thresholdOverrides'] as List<dynamic>? ?? const [])) {
+      _thresholdOverrides.add(key.toString());
+    }
+
+    // Canonical bands first: any limit the user has NOT overridden then adopts
+    // the published value instead of the old hardcoded one.
+    _bands = await AirQualityBands.load(UserSession.baseUrl);
+    _applyServerThresholds();
 
     await refreshFromBackend();
+  }
+
+  /// Adopt the served limits for every knob the user has not pinned.
+  void _applyServerThresholds() {
+    final limits = _bands?.limits;
+    if (limits == null) return;
+    if (usesServerDefault('aqi') && limits['Aqi'] != null) {
+      _aqiThreshold = limits['Aqi']!;
+    }
+    if (usesServerDefault('pm25') && limits['PM25'] != null) {
+      _pm25Threshold = limits['PM25']!;
+    }
+    if (usesServerDefault('co2') && limits['CO2'] != null) {
+      _co2Threshold = limits['CO2']!;
+    }
   }
 
   void startAutoRefresh({Duration interval = const Duration(seconds: 10)}) {
@@ -268,6 +307,13 @@ class AppState extends ChangeNotifier {
     required double co2Threshold,
     required bool notificationsEnabled,
   }) async {
+    // A knob counts as overridden only once it differs from the published
+    // value, so saving the form without touching a slider leaves that limit
+    // tracking the server.
+    _markOverride('aqi', aqiThreshold, _bands?.limits['Aqi']);
+    _markOverride('pm25', pm25Threshold, _bands?.limits['PM25']);
+    _markOverride('co2', co2Threshold, _bands?.limits['CO2']);
+
     _aqiThreshold = aqiThreshold;
     _pm25Threshold = pm25Threshold;
     _co2Threshold = co2Threshold;
@@ -491,12 +537,21 @@ class AppState extends ChangeNotifier {
       );
   }
 
+  void _markOverride(String key, double value, double? serverValue) {
+    if (serverValue != null && value == serverValue) {
+      _thresholdOverrides.remove(key);
+    } else {
+      _thresholdOverrides.add(key);
+    }
+  }
+
   Future<void> _persistSettings() async {
     await LocalStorageService.saveJsonMap(_settingsKey, {
       'activeSensorId': _activeSensorId,
       'aqiThreshold': _aqiThreshold,
       'pm25Threshold': _pm25Threshold,
       'co2Threshold': _co2Threshold,
+      'thresholdOverrides': _thresholdOverrides.toList(),
       'notificationsEnabled': _notificationsEnabled,
     });
   }
@@ -510,13 +565,18 @@ class AppState extends ChangeNotifier {
 
 final DateTime _epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
 
+// DENR category name for an AQI index. Reads the served table when it is
+// loaded; the fallback below mirrors it for the window before the first fetch.
 String _aqiLabelFromValue(int aqi) {
+  final served = AirQualityBands.current?.categoryFor(aqi)?.name;
+  if (served != null) return served;
+
   if (aqi <= 50)  return 'Good';
-  if (aqi <= 100) return 'Moderate';
-  if (aqi <= 150) return 'Unhealthy (SG)';
-  if (aqi <= 200) return 'Unhealthy';
-  if (aqi <= 300) return 'Very Unhealthy';
-  return 'Hazardous';
+  if (aqi <= 100) return 'Fair';
+  if (aqi <= 150) return 'Unhealthy for Sensitive Groups';
+  if (aqi <= 200) return 'Very Unhealthy';
+  if (aqi <= 300) return 'Acutely Unhealthy';
+  return 'Emergency';
 }
 
 class SensorReadings {

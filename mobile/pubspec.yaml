@@ -77,6 +77,11 @@ flutter:
     - assets/images/bewair_logo.png
     - assets/images/bewair_logo_black.png
     - assets/images/bewair_logo_white.png
+    # Offline copy of the canonical air-quality band table, used until the
+    # fetch from /api/air-quality/bands lands (and whenever it fails).
+    # GENERATED — regenerate with `node scripts/generateClientBands.js`
+    # in web/backend after any change to config/airQualityBands.js.
+    - assets/air_quality_bands.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

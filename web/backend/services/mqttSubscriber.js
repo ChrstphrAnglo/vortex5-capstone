@@ -2,7 +2,7 @@ const mqtt = require('mqtt')
 const AqiModel = require('../models/AqiModel')
 const Device = require('../models/DeviceModel')
 const { decodeFrame } = require('../utils/sensorDecoder')
-const { computeAqi } = require('../utils/aqiCalculator')
+const { computeAqi, nowcast, NOWCAST_HOURS } = require('../utils/aqiCalculator')
 
 const HIVEMQ_URL = 'mqtts://1c097cff873e428286ffc57255b3a044.s1.eu.hivemq.cloud:8883'
 const TOPIC      = 'bewair/+/telemetry'
@@ -33,8 +33,10 @@ function zeroSums() {
 }
 
 // Average the buffered frames. AQI is recomputed from the averaged metrics
-// rather than averaged itself, because the EPA AQI curve is piecewise linear
-// and the mean of AQI values is not the AQI of the mean.
+// rather than averaged itself, because the DENR AQI curve is piecewise linear
+// and the mean of AQI values is not the AQI of the mean. (That invariant still
+// holds for the NowCast path below, which also averages concentrations and
+// converts once, never the other way round.)
 function averageOf(buf) {
   const avg = {}
   for (const f of METRIC_FIELDS) {
@@ -42,6 +44,50 @@ function averageOf(buf) {
     avg[f] = DECIMAL_FIELDS.has(f) ? Math.round(v * 10) / 10 : Math.round(v)
   }
   return avg
+}
+
+// ---------------------------------------------------------------------------
+// NowCast input.
+//
+// The DENR breakpoints are 24-HOUR values, so converting a 30-second average
+// through them reports a passing puff of dust as a day of exposure. NowCast
+// (see utils/aqiCalculator.js) needs the last 12 HOURLY mean concentrations,
+// which we read back out of the collection we are already writing.
+//
+// Cost is one aggregation per device per write interval (30 s) over at most
+// 12 h of that device rows — a few hundred documents, served by the
+// {deviceId, createdAt} compound index. Reading from the DB rather than an
+// in-memory ring buffer means a backend restart does not reset the AQI to its
+// instantaneous value for the next 12 hours.
+//
+// Gaps matter: NowCast weights by HOW MANY HOURS AGO a mean is, so a missing
+// hour has to stay a null slot rather than letting later hours slide forward.
+// ---------------------------------------------------------------------------
+async function hourlyMeans(deviceId) {
+  const hourMs = 3600 * 1000
+  const since = new Date(Date.now() - NOWCAST_HOURS * hourMs)
+
+  const rows = await AqiModel.aggregate([
+    { $match: { deviceId, createdAt: { $gte: since } } },
+    { $group: {
+      _id: { $dateTrunc: { date: '$createdAt', unit: 'hour' } },
+      PM25: { $avg: '$PM25' },
+      PM10: { $avg: '$PM10' },
+    }}
+  ])
+
+  const currentHour = Math.floor(Date.now() / hourMs) * hourMs
+  const PM25 = new Array(NOWCAST_HOURS).fill(null)
+  const PM10 = new Array(NOWCAST_HOURS).fill(null)
+
+  for (const row of rows) {
+    const hoursAgo = Math.round((currentHour - new Date(row._id).getTime()) / hourMs)
+    if (hoursAgo < 0 || hoursAgo >= NOWCAST_HOURS) continue
+    PM25[hoursAgo] = row.PM25
+    PM10[hoursAgo] = row.PM10
+  }
+
+  return { PM25, PM10 }
 }
 
 function start() {
@@ -112,7 +158,46 @@ function start() {
       buf.lastWrite = now
 
       try {
-        await AqiModel.create({ deviceId, Aqi: computeAqi(avg), ...avg })
+        // TODO(pm-humidity-correction): correct PM2.5/PM10 for humidity
+        // inflation HERE, before either AQI is computed. The optical sensor
+        // counts swollen hygroscopic particles, so at the 60-80 %RH a
+        // naturally ventilated PH classroom sits at, reported PM runs high.
+        // Keep the raw optical value in a separate field when this lands, so
+        // rows written before and after the change stay distinguishable.
+        // Deliberately out of scope for the threshold reset.
+
+        // Instantaneous: what the room is doing in this 30-second window.
+        const instant = computeAqi(avg)
+
+        // Reported: NowCast over the last 12 hourly means, which is what makes
+        // 24-hour breakpoints meaningful against sub-minute data. Falls back to
+        // the instantaneous value when a device has under 2 usable hours of
+        // history (freshly provisioned, or just back from a long outage), and
+        // aqiBasis records which of the two this row actually used.
+        let reported = instant
+        let basis = 'instant'
+        try {
+          const means = await hourlyMeans(deviceId)
+          const ncPM25 = nowcast(means.PM25)
+          const ncPM10 = nowcast(means.PM10)
+          if (ncPM25 != null || ncPM10 != null) {
+            reported = computeAqi({
+              PM25: ncPM25 != null ? ncPM25 : avg.PM25,
+              PM10: ncPM10 != null ? ncPM10 : avg.PM10,
+            })
+            basis = 'nowcast'
+          }
+        } catch (err) {
+          console.warn(`[mqtt] nowcast failed for ${deviceId}, using instantaneous AQI: ${err.message}`)
+        }
+
+        await AqiModel.create({
+          deviceId,
+          Aqi: reported,
+          AqiInstant: instant,
+          aqiBasis: basis,
+          ...avg
+        })
       } catch (err) {
         console.error(`[mqtt] db write failed for ${deviceId} (${samples} samples): ${err.message}`)
       }

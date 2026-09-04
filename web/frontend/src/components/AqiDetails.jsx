@@ -13,7 +13,16 @@ const MetricTile = ({ label, value, unit, insightKey }) => {
   return (
     <div className="aqt-tile" style={{ '--aqt-color': color }}>
       <div className="aqt-top">
-        <span className="aqt-label">{label}</span>
+        <span className="aqt-label">
+          {label}
+          {/* CO₂ and formaldehyde are simulated by the FS00905B from its VOC
+              element, not measured. Say so wherever the number is shown. */}
+          {insight?.derived && (
+            <span className="aqt-derived" title="Derived from the VOC sensor, not directly measured">
+              {' '}· derived
+            </span>
+          )}
+        </span>
         {level && (
           <span className="aqt-badge" style={{ background: color + '20', color }}>
             {level}
@@ -40,7 +49,10 @@ const AqiDetails = ({ aqi }) => {
     { label: 'PM 10',    value: aqi?.PM10,         unit: 'µg/m³', key: 'pm10'     },
     { label: 'CO₂',      value: aqi?.CO2,          unit: 'ppm',   key: 'co2'      },
     { label: 'TVOC',     value: aqi?.TVOC,         unit: 'µg/m³', key: 'tvoc'     },
-    { label: 'HCHO',     value: aqi?.Formaldehyde, unit: 'ppb',   key: 'hcho'     },
+    // µg/m³, not ppb: sensorDecoder decodes this word as µg/m³ and the WHO
+    // guideline is 100 µg/m³. The old "ppb" label made the same number look
+    // like it was being compared against 100 ppb (≈ 123 µg/m³ at 25 °C).
+    { label: 'HCHO',     value: aqi?.Formaldehyde, unit: 'µg/m³', key: 'hcho'     },
     { label: 'Temp',     value: aqi?.Temperature,  unit: '°C',    key: 'temp'     },
     { label: 'Humidity', value: aqi?.Humidity,     unit: '%',     key: 'humidity' },
   ]

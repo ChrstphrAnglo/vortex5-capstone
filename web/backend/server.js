@@ -14,6 +14,7 @@ const deviceRoutes = require('./routes/device')
 const dashboardRoutes = require('./routes/dashboard')
 const alertsRoutes = require('./routes/alerts')
 const roomRoutes = require('./routes/room')
+const airQualityRoutes = require('./routes/airQuality')
 
 const mqttSubscriber = require('./services/mqttSubscriber')
 
@@ -49,6 +50,8 @@ app.use('/api/device',        deviceRoutes)
 app.use('/api/dashboard',     dashboardRoutes)
 app.use('/api/alerts',        alertsRoutes)
 app.use('/api/room',          roomRoutes)
+// Public: the canonical air-quality band table (no auth by design).
+app.use('/api/air-quality',   airQualityRoutes)
 
 // connect to db // mongoose
 mongoose.connect(process.env.MONGO_URI)

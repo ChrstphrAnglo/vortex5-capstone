@@ -6,6 +6,7 @@ import 'package:vortex5_application_2/app_state.dart';
 import 'package:vortex5_application_2/models/sensor_device.dart';
 import 'package:vortex5_application_2/pages/device_list_page.dart';
 import 'package:vortex5_application_2/pages/share_device_page.dart';
+import 'package:vortex5_application_2/services/air_quality_bands.dart';
 import 'package:vortex5_application_2/utils/aqi_colors.dart';
 import 'package:vortex5_application_2/utils/device_dialogs.dart';
 import 'package:vortex5_application_2/widgets/error_state.dart';
@@ -827,6 +828,31 @@ class _SensorPanel extends StatelessWidget {
                 fontSize: 15,
               ),
             ),
+            // CO₂ and formaldehyde are simulated by the FS00905B from its VOC
+            // element rather than measured. Say so wherever the value is shown,
+            // so nobody treats them as instrument readings.
+            if (_isDerivedComponent(c.key)) ...[
+              const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Icon(Icons.info_outline, size: 16, color: Color(0xFF94A3B8)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Derived value — the sensor estimates this from its VOC '
+                      'element rather than measuring it directly. Use it as a '
+                      'trend, not an exact figure.',
+                      style: TextStyle(
+                        color: Color(0xFF64748B),
+                        fontSize: 12.5,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -853,89 +879,50 @@ class _Insight {
   const _Insight(this.level, this.color, this.advice);
 }
 
-// Recommended actions for the current AQI category (U.S. EPA AirNow guidance).
+// Recommended actions for the current AQI category, taken from the canonical
+// band table the backend serves. The EPA copy that used to be inlined here
+// disagreed with the web dashboard about both the category names and the advice.
 List<String> _aqiActions(int aqi) {
-  if (aqi <= 50) {
-    return [
-      'Air quality is healthy — normal activities are fine.',
-      'Keep windows open for fresh-air ventilation.',
-    ];
-  }
-  if (aqi <= 100) {
-    return [
-      'Air quality is acceptable.',
-      'Unusually sensitive people should watch for symptoms during long or heavy activity.',
-    ];
-  }
-  if (aqi <= 150) {
-    return [
-      'Sensitive groups (children, elderly, asthma) should limit prolonged or heavy exertion.',
-      'Move strenuous activities indoors and improve ventilation.',
-    ];
-  }
-  if (aqi <= 200) {
-    return [
-      'Everyone should limit prolonged outdoor exertion.',
-      'Close windows and run a HEPA / MERV-13+ air purifier.',
-      'Sensitive groups should stay indoors.',
-    ];
-  }
-  if (aqi <= 300) {
-    return [
-      'Everyone should avoid outdoor exertion and stay indoors.',
-      'Seal the room and run an air purifier; wear an N95 if you must go out.',
-      'Avoid indoor pollution — no frying, vacuuming, or candles.',
-    ];
-  }
-  return [
-    'Health emergency — everyone stay indoors with windows shut and air filtered.',
-    'Wear an N95 outdoors; relocate to a clean-air shelter if the room cannot stay clean.',
-    'Seek medical help for any breathing difficulty.',
+  final actions = AirQualityBands.current?.categoryFor(aqi)?.actions;
+  if (actions != null && actions.isNotEmpty) return actions;
+  return const [
+    'Air-quality guidance is still loading. Pull down to refresh.',
   ];
 }
 
-/// Returns a qualitative reading + advice for a component value.
+// Sensor field name for each component key the UI uses. The field names are
+// fixed by the MQTT contract shared with the firmware and the backend.
+const Map<String, String> _insightFields = {
+  'pm1': 'PM1',
+  'pm25': 'PM25',
+  'pm10': 'PM10',
+  'co2': 'CO2',
+  'tvoc': 'TVOC',
+  'hcho': 'Formaldehyde',
+  'temp': 'Temperature',
+  'humidity': 'Humidity',
+};
+
+/// Qualitative reading + advice for a component value, graded against the
+/// canonical band table. This used to inline US EPA PM cut-points, a 20-26 °C
+/// comfort range and a 30-60 % humidity range — temperate-climate numbers that
+/// marked a normal Manila classroom permanently out of range.
 _Insight _insightFor(String key, double v) {
-  switch (key) {
-    case 'pm25':
-      if (v <= 12) return const _Insight('Good', aqiGood, 'Fine-particle (PM2.5) levels are healthy. No action needed.');
-      if (v <= 35.4) return const _Insight('Moderate', aqiModerate, 'Acceptable. Unusually sensitive people should watch for symptoms during long exposure.');
-      if (v <= 55.4) return const _Insight('Unhealthy (SG)', aqiUsg, 'Sensitive groups (asthma, children, elderly) may feel effects. Improve ventilation or run an air purifier.');
-      if (v <= 150.4) return const _Insight('Unhealthy', aqiUnhealthy, 'Everyone may start to feel effects. Reduce indoor sources (smoke, cooking) and filter the air.');
-      return const _Insight('Very Unhealthy', aqiVeryUnhealthy, 'Heavy fine-particle pollution. Limit exposure and filter the air immediately.');
-    case 'pm10':
-      if (v <= 54) return const _Insight('Good', aqiGood, 'Coarse-particle (PM10) levels are healthy.');
-      if (v <= 154) return const _Insight('Moderate', aqiModerate, 'Acceptable dust levels. Sensitive people should limit long exposure.');
-      if (v <= 254) return const _Insight('Unhealthy (SG)', aqiUsg, 'Elevated dust. Sensitive groups should improve ventilation.');
-      if (v <= 354) return const _Insight('Unhealthy', aqiUnhealthy, 'High dust levels. Reduce sources and filter the air.');
-      return const _Insight('Very Unhealthy', aqiVeryUnhealthy, 'Very high dust. Limit exposure and filter the air now.');
-    case 'co2':
-      if (v <= 800) return const _Insight('Good', aqiGood, 'The space is well-ventilated.');
-      if (v <= 1000) return const _Insight('Moderate', aqiModerate, 'Acceptable, but bring in fresh air if people feel drowsy.');
-      if (v <= 1500) return const _Insight('Stuffy', aqiUsg, 'Air is getting stuffy. Increase ventilation.');
-      if (v <= 2000) return const _Insight('Poor', aqiUnhealthy, 'Poor ventilation. Open windows or doors to bring CO₂ down.');
-      return const _Insight('Very Poor', aqiVeryUnhealthy, 'High CO₂ can cause headaches and fatigue. Ventilate the room immediately.');
-    case 'tvoc':
-      if (v <= 300) return const _Insight('Good', aqiGood, 'Low levels of volatile organic compounds.');
-      if (v <= 500) return const _Insight('Moderate', aqiModerate, 'Acceptable. Ventilate if you notice odors.');
-      if (v <= 1000) return const _Insight('Elevated', aqiUsg, 'Elevated VOCs. Increase fresh air and check sources (cleaners, paint, new furniture).');
-      if (v <= 3000) return const _Insight('High', aqiUnhealthy, 'High VOCs. Ventilate and remove the source.');
-      return const _Insight('Very High', aqiVeryUnhealthy, 'Very high VOCs. Ventilate the room now and find the source.');
-    case 'temp':
-      if (v >= 20 && v <= 26) return const _Insight('Comfortable', aqiGood, 'Temperature is in the comfortable range (20–26 °C).');
-      if (v >= 17 && v < 20) return const _Insight('Cool', aqiModerate, 'Slightly cool. A little below the ideal 20–26 °C range.');
-      if (v > 26 && v <= 30) return const _Insight('Warm', aqiModerate, 'Slightly warm. A little above the ideal 20–26 °C range.');
-      if (v < 17) return const _Insight('Cold', aqiUnhealthy, 'Too cold for comfort. Consider heating the room.');
-      return const _Insight('Hot', aqiUnhealthy, 'Too warm for comfort. Improve cooling or ventilation.');
-    case 'humidity':
-      if (v >= 30 && v <= 60) return const _Insight('Comfortable', aqiGood, 'Humidity is in the healthy range (30–60%).');
-      if (v >= 20 && v < 30) return const _Insight('Dry', aqiModerate, 'A bit dry. Below the ideal 30–60% range.');
-      if (v > 60 && v <= 70) return const _Insight('Humid', aqiModerate, 'A bit humid. Above the ideal 30–60% range.');
-      if (v < 20) return const _Insight('Too Dry', aqiUnhealthy, 'Very dry air can irritate eyes, skin, and airways. Consider a humidifier.');
-      return const _Insight('Too Humid', aqiUnhealthy, 'High humidity encourages mold and dust mites. Improve ventilation or dehumidify.');
-    default:
-      return const _Insight('—', Color(0xFF94A3B8), 'No insight available.');
+  final field = _insightFields[key];
+  final band = field == null ? null : AirQualityBands.current?.bandFor(field, v);
+  if (band == null) {
+    return const _Insight('—', Color(0xFF94A3B8), 'No insight available.');
   }
+  return _Insight(band.level, band.color, band.advice);
+}
+
+/// True when this component is simulated by the sensor rather than measured
+/// (CO2 and formaldehyde are derived from the VOC element). The detail sheet
+/// says so rather than presenting them as instrument readings.
+bool _isDerivedComponent(String key) {
+  final field = _insightFields[key];
+  if (field == null) return false;
+  return AirQualityBands.current?.fields[field]?.derived ?? false;
 }
 
 class _RecommendedActionsCard extends StatefulWidget {
@@ -1169,7 +1156,11 @@ class _GaugePainter extends CustomPainter {
 
   // Equal-width category segments (each gets the same slice of the arc).
   static const _bounds = <double>[0, 50, 100, 150, 200, 300, 500];
-  static const _bandColors = aqiBandColors;
+
+  // Resolved per repaint rather than held as a const, so the gauge picks up the
+  // served band colours once the canonical table loads instead of being frozen
+  // to the bundled palette at class-load time.
+  List<Color> get _bandColors => aqiBandColorsNow();
 
   int get _segCount => _bandColors.length;
 

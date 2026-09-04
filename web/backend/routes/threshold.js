@@ -3,6 +3,7 @@ const { requireAuth, requireAdmin } = require('../middleware/requireAuth')
 const {
   getThresholds,
   createThreshold,
+  setActiveThreshold,
   deleteThreshold,
   addAdvisory,
   updateThreshold,
@@ -16,6 +17,7 @@ router.get('/',    requireAuth, getThresholds)
 router.post('/',   requireAuth, requireAdmin, createThreshold)
 router.delete('/:id', requireAuth, requireAdmin, deleteThreshold)
 router.put('/:id', requireAuth, requireAdmin, updateThreshold)
+router.patch('/:id/active', requireAuth, requireAdmin, setActiveThreshold)
 
 /* ADVISORY ROUTES */
 router.post('/:id/advisory',             requireAuth, requireAdmin, addAdvisory)

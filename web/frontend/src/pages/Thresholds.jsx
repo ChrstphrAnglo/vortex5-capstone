@@ -1,32 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useAuthContext } from '../hooks/useAuthContext'
+import {
+  airQualityLimitKeys,
+  airQualityLimits,
+  airQualitySource,
+} from '../utils/airQualityGuidance'
 
-const EMPTY_FORM = {
-  label: '',
-  Aqi: '',
-  PM1: '',
-  PM25: '',
-  PM10: '',
-  TVOC: '',
-  CO2: '',
-  Formaldehyde: '',
-  Temperature: '',
-  Humidity: ''
-}
+// The form is built from the canonical band table the backend serves, not from
+// a hand-maintained list here — adding a field to the canonical table cannot
+// silently skip this page, and the "alerting" tags can no longer be wrong.
+//
+// Temperature and Humidity appear as min/max PAIRS because they are two-sided:
+// a classroom that is too cold or too dry is a problem too, not just one that
+// is too hot or too humid.
+const FIELD_DEFS = airQualityLimitKeys()
 
-const FIELD_DEFS = [
-  { key: 'Aqi',          label: 'AQI' },
-  { key: 'PM1',          label: 'PM 1.0' },
-  { key: 'PM25',         label: 'PM 2.5' },
-  { key: 'PM10',         label: 'PM 10' },
-  { key: 'TVOC',         label: 'TVOC' },
-  { key: 'CO2',          label: 'CO₂' },
-  { key: 'Formaldehyde', label: 'HCHO' },
-  { key: 'Temperature',  label: 'Temperature' },
-  { key: 'Humidity',     label: 'Humidity' }
-]
+const EMPTY_FORM = Object.fromEntries([['label', ''], ...FIELD_DEFS.map(({ key }) => [key, ''])])
 
+// A blank input stays null, and null means "use the canonical value". That is
+// what makes a row an OVERRIDE of the standard rather than a replacement of it.
 const toPayload = (data) => {
   const payload = { label: data.label }
   for (const { key } of FIELD_DEFS) {
@@ -47,6 +40,10 @@ const Thresholds = () => {
   const [addError, setAddError] = useState('')
   const [editError, setEditError] = useState('')
   const [rowError, setRowError] = useState('')
+
+  // Canonical values, shown as input placeholders so a blank field visibly
+  // reads as "the standard applies here".
+  const canonical = airQualityLimits()
 
   useEffect(() => {
     const fetchThresholds = async () => {
@@ -87,6 +84,22 @@ const Thresholds = () => {
       setShowModal(false)
     } else {
       setAddError(json.error || 'Failed to add threshold.')
+    }
+  }
+
+  // Exactly one row drives alerting. Without this the newest row silently
+  // won, so adding a row to experiment changed live alerting immediately.
+  const handleSetActive = async (id) => {
+    setRowError('')
+    const res = await fetch(`/api/threshold/${id}/active`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${user?.token}` }
+    })
+    if (res.ok) {
+      setThresholds(prev => prev.map(t => ({ ...t, active: t._id === id })))
+    } else {
+      const json = await res.json().catch(() => ({}))
+      setRowError(json.error || 'Failed to set the active threshold.')
     }
   }
 
@@ -135,10 +148,20 @@ const Thresholds = () => {
 
   const renderFields = (data, onChange) => (
     <div className="threshold-grid">
-      {FIELD_DEFS.map(({ key, label }) => (
+      {FIELD_DEFS.map(({ key, label, unit, alerting }) => (
         <div className="field" key={key}>
-          <label>{label}</label>
-          <input type="number" name={key} value={data[key]} onChange={onChange} className="search-input" />
+          <label>
+            {label}{unit ? ` (${unit})` : ''}
+            {!alerting && <span className="field-note"> · feeds AQI</span>}
+          </label>
+          <input
+            type="number"
+            name={key}
+            value={data[key]}
+            onChange={onChange}
+            placeholder={canonical[key] != null ? String(canonical[key]) : ''}
+            className="search-input"
+          />
         </div>
       ))}
     </div>
@@ -165,12 +188,17 @@ const Thresholds = () => {
               </div>
 
               <div className="modal-body">
+                <p className="threshold-hint">
+                  Leave a field blank to keep the standard value shown in grey.
+                  A number here overrides that one limit only.
+                </p>
+
                 <div className="label-row">
                   <label>Label</label>
                   <input
                     type="text"
                     name="label"
-                    placeholder="e.g. Unhealthy Air"
+                    placeholder="e.g. Exam week, windows closed"
                     value={formData.label}
                     onChange={handleChange}
                     required
@@ -203,6 +231,11 @@ const Thresholds = () => {
               </div>
 
               <div className="modal-body">
+                <p className="threshold-hint">
+                  Leave a field blank to keep the standard value shown in grey.
+                  A number here overrides that one limit only.
+                </p>
+
                 <div className="label-row">
                   <label>Label</label>
                   <input
@@ -234,13 +267,25 @@ const Thresholds = () => {
       <hr />
 
       <h3>Existing Thresholds</h3>
+      <p className="threshold-hint">
+        Alerting uses the row marked <strong>Active</strong>, with any blank field
+        falling back to the standard. With no row selected the standards apply on
+        their own — AQI {canonical.Aqi}, CO₂ {canonical.CO2} ppm, TVOC {canonical.TVOC} µg/m³,
+        temperature {canonical.TemperatureMin}–{canonical.TemperatureMax} °C,
+        humidity {canonical.HumidityMin}–{canonical.HumidityMax} %.
+        Rows marked <em>feeds AQI</em> are reported through the AQI rather than
+        raising a separate alert.
+      </p>
 
       <div className="table-card">
         <table className="modern-table">
           <thead>
             <tr>
+              <th>Active</th>
               <th>Label</th>
-              {FIELD_DEFS.map(({ key, label }) => <th key={key}>{label}</th>)}
+              {FIELD_DEFS.map(({ key, label, unit }) => (
+                <th key={key}>{label}{unit ? ` (${unit})` : ''}</th>
+              ))}
               <th>Actions</th>
             </tr>
           </thead>
@@ -248,8 +293,22 @@ const Thresholds = () => {
           <tbody>
             {thresholds.map(t => (
               <tr key={t._id}>
+                <td>
+                  <input
+                    type="radio"
+                    name="activeThreshold"
+                    checked={!!t.active}
+                    onChange={() => handleSetActive(t._id)}
+                    title="Use this row for alerting"
+                  />
+                </td>
                 <td>{t.label}</td>
-                {FIELD_DEFS.map(({ key }) => <td key={key}>{t[key] ?? '—'}</td>)}
+                {/* A blank cell is not "unset" — it is the standard value in force. */}
+                {FIELD_DEFS.map(({ key }) => (
+                  <td key={key}>
+                    {t[key] ?? <span className="field-note">{canonical[key]}</span>}
+                  </td>
+                ))}
                 <td>
                   <div className="action-buttons">
                     <button className="icon-btn edit-btn" onClick={() => handleEdit(t)}>
@@ -265,14 +324,18 @@ const Thresholds = () => {
 
             {thresholds.length === 0 && (
               <tr>
-                <td colSpan={FIELD_DEFS.length + 2} style={{ textAlign: 'center', padding: '15px' }}>
-                  No thresholds configured
+                <td colSpan={FIELD_DEFS.length + 3} style={{ textAlign: 'center', padding: '15px' }}>
+                  No thresholds configured — the standards below are in force
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      <p className="threshold-hint" style={{ marginTop: 12 }}>
+        Standards: {airQualitySource()}
+      </p>
     </div>
   )
 }

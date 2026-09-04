@@ -1,9 +1,11 @@
 import { ShieldCheck, Info } from 'lucide-react'
-import { aqiAdvisory, flaggedComponents } from '../utils/airQualityGuidance'
+import { aqiAdvisory, flaggedComponents, airQualitySource } from '../utils/airQualityGuidance'
 
-// Shows credible (EPA/WHO/ASHRAE) recommended actions for the current reading:
-//  - overall AQI advisory for the category
-//  - per-component actions for any component currently out of its healthy range
+// Shows recommended actions for the current reading, with every number and
+// every line of advice coming from the canonical band table the backend serves
+// (GET /api/air-quality/bands) rather than from a second copy kept here:
+//  - overall AQI advisory for the DENR category
+//  - per-component actions for any component currently outside its range
 const RecommendedActions = ({ reading }) => {
   const aqi = reading?.Aqi
   const advisory = aqiAdvisory(aqi)
@@ -44,6 +46,8 @@ const RecommendedActions = ({ reading }) => {
               <div className="rec-comp-text">
                 <div className="rec-comp-name">
                   {c.label} <span className="rec-comp-level" style={{ color: c.color }}>· {c.level}</span>
+                  {/* Simulated by the sensor from its VOC element, not measured. */}
+                  {c.derived && <span className="rec-comp-derived"> · derived value</span>}
                 </div>
                 <div className="rec-comp-advice">{c.advice}</div>
               </div>
@@ -59,7 +63,7 @@ const RecommendedActions = ({ reading }) => {
       )}
 
       <div className="rec-source">
-        Guidance: U.S. EPA AirNow (AQI), WHO Air Quality Guidelines (PM), EPA IAQ / ASHRAE (CO₂, TVOC, formaldehyde, temp, humidity).
+        Guidance: {airQualitySource()}
       </div>
     </div>
   )

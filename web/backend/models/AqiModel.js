@@ -4,7 +4,18 @@ const Schema = mongoose.Schema
 
 const AqiSchema = new Schema({
     deviceId:     { type: String, required: true, index: true },
-    Aqi:          { type: Number, required: true }, // computed from PM2.5/PM10
+    // Reported AQI: NowCast over the last 12 hourly PM means, converted through
+    // the DENR breakpoints. Those breakpoints are 24-hour values, so this is
+    // the only figure that may be presented as "the AQI".
+    Aqi:          { type: Number, required: true },
+    // The same conversion applied to this row 30-second average — the "current
+    // reading" the dashboard can show beside the reported AQI. Optional so
+    // documents written before NowCast landed still validate.
+    AqiInstant:   { type: Number },
+    // Which of the two Aqi actually is: 'nowcast' once a device has enough
+    // history, 'instant' before that. Lets the UI avoid claiming a NowCast it
+    // does not have.
+    aqiBasis:     { type: String, enum: ['nowcast', 'instant'] },
     PM1:          { type: Number, required: true },
     PM25:         { type: Number, required: true },
     PM10:         { type: Number, required: true },

@@ -1500,6 +1500,16 @@ input, select {
   color: var(--color-text-tertiary);
 }
 
+/* CO₂ and formaldehyde are simulated by the sensor from its VOC element rather
+   than measured. Marked quietly, but never omitted. */
+.aqt-derived {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+  opacity: 0.75;
+}
+
 .aqt-badge {
   font-size: 12px;
   font-weight: 700;
@@ -4410,6 +4420,8 @@ input, select {
 .rec-comp-dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; flex: 0 0 auto; }
 .rec-comp-name { font-weight: 700; color: var(--color-text-primary); font-size: 14px; }
 .rec-comp-level { font-weight: 600; }
+/* Simulated from the VOC element, not measured — see AqiDetails. */
+.rec-comp-derived { font-weight: 500; font-style: italic; color: var(--color-text-tertiary); }
 .rec-comp-advice { color: var(--color-text-secondary); font-size: 13.5px; line-height: 1.45; }
 .rec-allgood {
   display: flex; align-items: center; gap: 8px;

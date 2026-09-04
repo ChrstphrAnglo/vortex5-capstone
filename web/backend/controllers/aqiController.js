@@ -1,17 +1,13 @@
 const AqiModel = require('../models/AqiModel')
 const Device = require('../models/DeviceModel')
-const ThresholdModel = require('../models/ThresholdModel')
 const getVisibleDeviceIds = require('../utils/visibleDevices')
+const { resolveLimits } = require('../utils/thresholdLimits')
+const { AQI_CATEGORIES, categoryFor } = require('../config/airQualityBands')
 
-// EPA AQI category from numeric value
-function aqiCategory(aqi) {
-  if (aqi <= 50)  return 'Good'
-  if (aqi <= 100) return 'Moderate'
-  if (aqi <= 150) return 'Unhealthy (SG)'
-  if (aqi <= 200) return 'Unhealthy'
-  if (aqi <= 300) return 'Very Unhealthy'
-  return 'Hazardous'
-}
+// Categories and limits come from config/airQualityBands.js. This file used to
+// carry a private copy of both, which is how the API ended up emitting US EPA
+// category names while the dashboard coloured DENR ones.
+const aqiCategory = categoryFor
 
 // all readings for user's devices, newest first
 const getAqi = async (req, res) => {
@@ -45,11 +41,6 @@ const getLatestPerDevice = async (req, res) => {
 
 // Per-pollutant fields we compute statistics for.
 const POLLUTANT_FIELDS = ['Aqi', 'PM1', 'PM25', 'PM10', 'TVOC', 'CO2', 'Formaldehyde', 'Temperature', 'Humidity']
-
-// Default WHO/EPA-style guideline limits (overridden by the latest Threshold doc).
-const DEFAULT_LIMITS = {
-  Aqi: 100, PM25: 25, PM10: 50, CO2: 1000, TVOC: 500, Formaldehyde: 100,
-}
 
 // Build a $group spec that computes avg/min/max/std for every pollutant field.
 function buildStatsGroup() {
@@ -125,16 +116,8 @@ const getAnalytics = async (req, res) => {
     const prevFrom = new Date(from.getTime() - rangeMs)
     const prevMatch = { ...deviceFilter, createdAt: { $gte: prevFrom, $lt: from } }
 
-    // Thresholds (latest doc or defaults)
-    const thresholdDoc = await ThresholdModel.findOne().sort({ createdAt: -1 }).lean()
-    const limits = {
-      Aqi:          thresholdDoc?.Aqi          ?? DEFAULT_LIMITS.Aqi,
-      PM25:         thresholdDoc?.PM25         ?? DEFAULT_LIMITS.PM25,
-      PM10:         thresholdDoc?.PM10         ?? DEFAULT_LIMITS.PM10,
-      CO2:          thresholdDoc?.CO2          ?? DEFAULT_LIMITS.CO2,
-      TVOC:         thresholdDoc?.TVOC         ?? DEFAULT_LIMITS.TVOC,
-      Formaldehyde: thresholdDoc?.Formaldehyde ?? DEFAULT_LIMITS.Formaldehyde,
-    }
+    // Limits in force: the active threshold row merged over the canonical bands.
+    const { limits } = await resolveLimits()
 
     const [
       statsAgg, prevStatsAgg, weekdayStatsAgg, weekendStatsAgg,
@@ -218,8 +201,8 @@ const getAnalytics = async (req, res) => {
         { $match: match },
         { $bucket: {
             groupBy: '$Aqi',
-            boundaries: [0, 51, 101, 151, 201, 301, Infinity],
-            default: 'Hazardous',
+            boundaries: [...AQI_CATEGORIES.map(c => c.min), Infinity],
+            default: 'above-range',
             output: { count: { $sum: 1 } }
         }}
       ]),
@@ -248,10 +231,12 @@ const getAnalytics = async (req, res) => {
     }
 
     // ----- Category distribution -----
-    const categoryLabels = ['Good', 'Moderate', 'Unhealthy (SG)', 'Unhealthy', 'Very Unhealthy', 'Hazardous']
-    const lowerBounds = [0, 51, 101, 151, 201, 301]
-    const categories = categoryLabels.map((label, i) => {
-      const bucket = categoryAgg.find(b => b._id === lowerBounds[i] || (i === 5 && b._id === 'Hazardous'))
+    const lastIndex = AQI_CATEGORIES.length - 1
+    const categories = AQI_CATEGORIES.map((cat, i) => {
+      const label = cat.name
+      // Anything past the top boundary lands in the default bucket; fold it
+      // into the top category rather than reporting it separately.
+      const bucket = categoryAgg.find(b => b._id === cat.min || (i === lastIndex && b._id === 'above-range'))
       const count = bucket?.count || 0
       return { label, count, pct: totalCount > 0 ? Math.round((count / totalCount) * 100) : 0 }
     })
@@ -276,6 +261,11 @@ const getAnalytics = async (req, res) => {
     // ----- Exceedances (feature 4) -----
     // Each hourly bucket = ~1 hour. Count buckets where the hour's average exceeded the limit.
     const totalHours = hourlyAgg.length
+    // One-sided fields only: hourlyAgg above does not carry Temperature or
+    // Humidity, and both are two-sided, so "hours over the limit" would need a
+    // second aggregation and a different question. PM2.5/PM10 stay here even
+    // though they no longer alert on their own — as an exceedance REPORT they
+    // are exactly what a school needs to show against the DENR standard.
     const exceedanceFields = ['Aqi', 'PM25', 'PM10', 'CO2', 'TVOC', 'Formaldehyde']
     const exceedances = exceedanceFields.map(f => {
       const hours = hourlyAgg.filter(h => h[f] != null && h[f] > limits[f]).length

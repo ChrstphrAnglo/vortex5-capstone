@@ -1,0 +1,527 @@
+{
+  "_generated": "DO NOT EDIT BY HAND. Regenerate: node scripts/generateClientBands.js",
+  "categories": [
+    {
+      "name": "Good",
+      "min": 0,
+      "max": 50,
+      "color": "#16A34A",
+      "actions": [
+        "Air quality is healthy — normal classroom activities are fine.",
+        "Keep windows and doors open for cross-ventilation."
+      ]
+    },
+    {
+      "name": "Fair",
+      "min": 51,
+      "max": 100,
+      "color": "#F59E0B",
+      "actions": [
+        "Air quality is acceptable.",
+        "Unusually sensitive people should watch for symptoms during long or heavy activity."
+      ]
+    },
+    {
+      "name": "Unhealthy for Sensitive Groups",
+      "min": 101,
+      "max": 150,
+      "color": "#EA580C",
+      "actions": [
+        "Sensitive pupils (asthma, allergies, heart conditions) should limit prolonged or heavy exertion.",
+        "Move PE and strenuous activities indoors and increase ventilation."
+      ]
+    },
+    {
+      "name": "Very Unhealthy",
+      "min": 151,
+      "max": 200,
+      "color": "#DC2626",
+      "actions": [
+        "Everyone should limit prolonged outdoor exertion.",
+        "Close windows facing the source, run a fan-filter or HEPA unit if available.",
+        "Sensitive pupils should stay indoors."
+      ]
+    },
+    {
+      "name": "Acutely Unhealthy",
+      "min": 201,
+      "max": 300,
+      "color": "#9333EA",
+      "actions": [
+        "Everyone should avoid outdoor exertion and stay indoors.",
+        "Seal the room as far as practical and filter the air; wear a well-fitted mask outdoors.",
+        "Avoid adding indoor pollution — no sweeping, frying or burning."
+      ]
+    },
+    {
+      "name": "Emergency",
+      "min": 301,
+      "max": 500,
+      "color": "#7F1D1D",
+      "actions": [
+        "Health emergency — keep everyone indoors with windows shut and air filtered.",
+        "Consider suspending classes and relocating to a clean-air area.",
+        "Seek medical help for any breathing difficulty."
+      ]
+    }
+  ],
+  "fields": [
+    {
+      "key": "Aqi",
+      "label": "AQI",
+      "unit": "",
+      "alerting": true,
+      "twoSided": false,
+      "derived": false,
+      "note": "max(PM2.5 sub-index, PM10 sub-index), DENR DAO 2020-14.",
+      "alertLow": null,
+      "alertHigh": 100,
+      "bands": [
+        {
+          "min": 0,
+          "max": 50,
+          "level": "Good",
+          "color": "#16A34A",
+          "advice": "Air quality is healthy — normal classroom activities are fine."
+        },
+        {
+          "min": 51,
+          "max": 100,
+          "level": "Fair",
+          "color": "#F59E0B",
+          "advice": "Air quality is acceptable."
+        },
+        {
+          "min": 101,
+          "max": 150,
+          "level": "Unhealthy for Sensitive Groups",
+          "color": "#EA580C",
+          "advice": "Sensitive pupils (asthma, allergies, heart conditions) should limit prolonged or heavy exertion."
+        },
+        {
+          "min": 151,
+          "max": 200,
+          "level": "Very Unhealthy",
+          "color": "#DC2626",
+          "advice": "Everyone should limit prolonged outdoor exertion."
+        },
+        {
+          "min": 201,
+          "max": 300,
+          "level": "Acutely Unhealthy",
+          "color": "#9333EA",
+          "advice": "Everyone should avoid outdoor exertion and stay indoors."
+        },
+        {
+          "min": 301,
+          "max": 500,
+          "level": "Emergency",
+          "color": "#7F1D1D",
+          "advice": "Health emergency — keep everyone indoors with windows shut and air filtered."
+        }
+      ]
+    },
+    {
+      "key": "PM1",
+      "label": "PM 1.0",
+      "unit": "µg/m³",
+      "alerting": true,
+      "twoSided": false,
+      "derived": false,
+      "note": "No published PM1 standard exists; graded against the PM2.5 table as a proxy.",
+      "alertLow": null,
+      "alertHigh": 35,
+      "bands": [
+        {
+          "min": 0,
+          "max": 25,
+          "level": "Good",
+          "color": "#16A34A",
+          "advice": "Ultrafine-particle levels are low."
+        },
+        {
+          "min": 25.1,
+          "max": 35,
+          "level": "Fair",
+          "color": "#F59E0B",
+          "advice": "Acceptable. Ventilate if there is visible smoke or dust."
+        },
+        {
+          "min": 35.1,
+          "max": 45,
+          "level": "Unhealthy for Sensitive Groups",
+          "color": "#EA580C",
+          "advice": "Improve ventilation and remove indoor sources (cooking smoke, candles, traffic)."
+        },
+        {
+          "min": 45.1,
+          "max": 55,
+          "level": "Very Unhealthy",
+          "color": "#DC2626",
+          "advice": "Filter the air and stop indoor combustion."
+        },
+        {
+          "min": 55.1,
+          "max": 90,
+          "level": "Acutely Unhealthy",
+          "color": "#9333EA",
+          "advice": "Limit exposure and filter the air now."
+        },
+        {
+          "min": 91,
+          "max": null,
+          "level": "Emergency",
+          "color": "#7F1D1D",
+          "advice": "Very heavy ultrafine pollution. Move pupils out of the room."
+        }
+      ]
+    },
+    {
+      "key": "PM25",
+      "label": "PM 2.5",
+      "unit": "µg/m³",
+      "alerting": false,
+      "twoSided": false,
+      "derived": false,
+      "note": "Feeds the AQI; the AQI alert names it as `driver` rather than alerting separately.",
+      "alertLow": null,
+      "alertHigh": 35,
+      "bands": [
+        {
+          "min": 0,
+          "max": 25,
+          "level": "Good",
+          "color": "#16A34A",
+          "advice": "Fine-particle levels are healthy."
+        },
+        {
+          "min": 25.1,
+          "max": 35,
+          "level": "Fair",
+          "color": "#F59E0B",
+          "advice": "Acceptable. Sensitive pupils should watch for symptoms during long exposure."
+        },
+        {
+          "min": 35.1,
+          "max": 45,
+          "level": "Unhealthy for Sensitive Groups",
+          "color": "#EA580C",
+          "advice": "Increase ventilation or run a fan-filter unit; remove indoor sources (smoke, cooking)."
+        },
+        {
+          "min": 45.1,
+          "max": 55,
+          "level": "Very Unhealthy",
+          "color": "#DC2626",
+          "advice": "Close windows facing the source, filter the air, and stop indoor combustion."
+        },
+        {
+          "min": 55.1,
+          "max": 90,
+          "level": "Acutely Unhealthy",
+          "color": "#9333EA",
+          "advice": "Heavy fine-particle pollution. Limit exposure and filter the air."
+        },
+        {
+          "min": 91,
+          "max": null,
+          "level": "Emergency",
+          "color": "#7F1D1D",
+          "advice": "Hazardous fine-particle levels. Move pupils out of the room."
+        }
+      ]
+    },
+    {
+      "key": "PM10",
+      "label": "PM 10",
+      "unit": "µg/m³",
+      "alerting": false,
+      "twoSided": false,
+      "derived": false,
+      "note": "Feeds the AQI; the AQI alert names it as `driver` rather than alerting separately.",
+      "alertLow": null,
+      "alertHigh": 154,
+      "bands": [
+        {
+          "min": 0,
+          "max": 54,
+          "level": "Good",
+          "color": "#16A34A",
+          "advice": "Coarse-particle (dust) levels are healthy."
+        },
+        {
+          "min": 55,
+          "max": 154,
+          "level": "Fair",
+          "color": "#F59E0B",
+          "advice": "Acceptable dust. Damp-mop instead of dry sweeping."
+        },
+        {
+          "min": 155,
+          "max": 254,
+          "level": "Unhealthy for Sensitive Groups",
+          "color": "#EA580C",
+          "advice": "Elevated dust. Increase ventilation and avoid dry sweeping during class hours."
+        },
+        {
+          "min": 255,
+          "max": 354,
+          "level": "Very Unhealthy",
+          "color": "#DC2626",
+          "advice": "High dust. Close windows facing the source and damp-mop the room."
+        },
+        {
+          "min": 355,
+          "max": 424,
+          "level": "Acutely Unhealthy",
+          "color": "#9333EA",
+          "advice": "Very high dust. Limit exposure and filter the air now."
+        },
+        {
+          "min": 425,
+          "max": null,
+          "level": "Emergency",
+          "color": "#7F1D1D",
+          "advice": "Hazardous dust levels. Move pupils out of the room."
+        }
+      ]
+    },
+    {
+      "key": "TVOC",
+      "label": "TVOC",
+      "unit": "µg/m³",
+      "alerting": true,
+      "twoSided": false,
+      "derived": false,
+      "note": "Hygienic guidance only — no regulator sets a binding TVOC limit.",
+      "alertLow": null,
+      "alertHigh": 1000,
+      "bands": [
+        {
+          "min": 0,
+          "max": 300,
+          "level": "Good",
+          "color": "#16A34A",
+          "advice": "Low levels of volatile organic compounds."
+        },
+        {
+          "min": 300,
+          "max": 1000,
+          "level": "Fair",
+          "color": "#F59E0B",
+          "advice": "Acceptable. Ventilate if you notice odours."
+        },
+        {
+          "min": 1000,
+          "max": 3000,
+          "level": "Elevated",
+          "color": "#EA580C",
+          "advice": "Increase fresh air and check sources (cleaners, paint, solvents, new furniture)."
+        },
+        {
+          "min": 3000,
+          "max": 10000,
+          "level": "High",
+          "color": "#DC2626",
+          "advice": "Ventilate well and remove the source; irritation and headaches are likely."
+        },
+        {
+          "min": 10000,
+          "max": 25000,
+          "level": "Very High",
+          "color": "#9333EA",
+          "advice": "Ventilate the room now and identify the emitting source."
+        },
+        {
+          "min": 25000,
+          "max": null,
+          "level": "Severe",
+          "color": "#7F1D1D",
+          "advice": "Evacuate the room and ventilate before anyone returns."
+        }
+      ]
+    },
+    {
+      "key": "CO2",
+      "label": "CO₂",
+      "unit": "ppm",
+      "alerting": true,
+      "twoSided": false,
+      "derived": true,
+      "note": "Ventilation indicator, not a health limit. ASHRAE 62.1 sets no CO₂ limit. Derived from the VOC element, not measured.",
+      "alertLow": null,
+      "alertHigh": 1500,
+      "bands": [
+        {
+          "min": 0,
+          "max": 1000,
+          "level": "Well ventilated",
+          "color": "#16A34A",
+          "advice": "Fresh air supply is keeping up with the room."
+        },
+        {
+          "min": 1000,
+          "max": 1500,
+          "level": "Stuffy",
+          "color": "#F59E0B",
+          "advice": "Ventilation is thinning — open windows and doors wider."
+        },
+        {
+          "min": 1500,
+          "max": null,
+          "level": "Poorly ventilated",
+          "color": "#EA580C",
+          "advice": "Ventilation is inadequate. Open everything, use fans to cross-ventilate, and reduce occupancy if you can."
+        }
+      ]
+    },
+    {
+      "key": "Formaldehyde",
+      "label": "Formaldehyde",
+      "unit": "µg/m³",
+      "alerting": true,
+      "twoSided": false,
+      "derived": true,
+      "note": "WHO 2010 short-term guideline, 30-min average. Derived from the VOC element, not measured.",
+      "alertLow": null,
+      "alertHigh": 100,
+      "bands": [
+        {
+          "min": 0,
+          "max": 100,
+          "level": "Good",
+          "color": "#16A34A",
+          "advice": "Below the WHO indoor guideline (100 µg/m³, 30-minute average)."
+        },
+        {
+          "min": 100,
+          "max": 200,
+          "level": "Elevated",
+          "color": "#EA580C",
+          "advice": "Ventilate — especially around new pressed-wood furniture, plywood or fresh paint."
+        },
+        {
+          "min": 200,
+          "max": null,
+          "level": "High",
+          "color": "#DC2626",
+          "advice": "Ventilate aggressively and remove or seal the emitting material."
+        }
+      ]
+    },
+    {
+      "key": "Temperature",
+      "label": "Temperature",
+      "unit": "°C",
+      "alerting": true,
+      "twoSided": true,
+      "derived": false,
+      "note": "ASHRAE 55 adaptive comfort for naturally ventilated spaces, Manila outdoor mean ≈ 28.5 °C.",
+      "alertLow": 23,
+      "alertHigh": 30,
+      "bands": [
+        {
+          "min": null,
+          "max": 20,
+          "level": "Cold",
+          "color": "#DC2626",
+          "advice": "Unusually cold for this climate — check whether air conditioning is over-cooling the room."
+        },
+        {
+          "min": 20,
+          "max": 23,
+          "level": "Cool",
+          "color": "#F59E0B",
+          "advice": "Slightly below the adaptive comfort band. Reduce cooling or air-flow."
+        },
+        {
+          "min": 23,
+          "max": 30,
+          "level": "Comfortable",
+          "color": "#16A34A",
+          "advice": "Within the ASHRAE 55 adaptive comfort band for a naturally ventilated room (23–30 °C)."
+        },
+        {
+          "min": 30,
+          "max": 33,
+          "level": "Warm",
+          "color": "#F59E0B",
+          "advice": "Slightly above the comfort band. Increase air movement — fans raise the acceptable temperature."
+        },
+        {
+          "min": 33,
+          "max": null,
+          "level": "Hot",
+          "color": "#DC2626",
+          "advice": "Heat stress risk. Increase air movement, provide drinking water, and avoid strenuous activity."
+        }
+      ]
+    },
+    {
+      "key": "Humidity",
+      "label": "Humidity",
+      "unit": "%",
+      "alerting": true,
+      "twoSided": true,
+      "derived": false,
+      "note": "Mould-risk threshold (WHO Dampness and Mould 2009; US EPA), not thermal comfort. ASHRAE 55-2020 sets no RH comfort limits.",
+      "alertLow": 30,
+      "alertHigh": 75,
+      "bands": [
+        {
+          "min": null,
+          "max": 30,
+          "level": "Too Dry",
+          "color": "#F59E0B",
+          "advice": "Very dry air irritates eyes and airways. Rare indoors in this climate — check the sensor if it persists."
+        },
+        {
+          "min": 30,
+          "max": 70,
+          "level": "Acceptable",
+          "color": "#16A34A",
+          "advice": "Below the mould-risk threshold (70 %)."
+        },
+        {
+          "min": 70,
+          "max": 75,
+          "level": "Humid",
+          "color": "#F59E0B",
+          "advice": "Above the 70 % mould-risk threshold. Improve cross-ventilation and check for damp walls or leaks."
+        },
+        {
+          "min": 75,
+          "max": null,
+          "level": "Mould Risk",
+          "color": "#EA580C",
+          "advice": "Sustained damp encourages mould and dust mites. Ventilate, fix leaks, and dry out soft furnishings."
+        }
+      ]
+    }
+  ],
+  "alertingFields": [
+    "Aqi",
+    "PM1",
+    "TVOC",
+    "CO2",
+    "Formaldehyde",
+    "Temperature",
+    "Humidity"
+  ],
+  "limits": {
+    "Aqi": 100,
+    "PM1": 35,
+    "PM25": 35,
+    "PM10": 154,
+    "TVOC": 1000,
+    "CO2": 1500,
+    "Formaldehyde": 100,
+    "TemperatureMin": 23,
+    "TemperatureMax": 30,
+    "HumidityMin": 30,
+    "HumidityMax": 75
+  },
+  "limitsSource": "canonical",
+  "limitsLabel": null,
+  "source": "DENR DAO 2020-14 (PM/AQI) · WHO IAQ 2010 (formaldehyde) · WHO Dampness and Mould 2009 (humidity) · ASHRAE Position Document on Indoor CO2 · ASHRAE 55 adaptive comfort (temperature) · Seifert 1990 / Mølhave 1997 (TVOC)"
+}

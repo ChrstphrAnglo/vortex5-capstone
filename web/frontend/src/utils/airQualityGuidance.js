@@ -1,125 +1,177 @@
-// Air-quality guidance based on credible public-health sources:
-//  - U.S. EPA AirNow — AQI categories & recommended actions
-//  - WHO Global Air Quality Guidelines (2021) — PM2.5 / PM10
-//  - U.S. EPA Indoor Air Quality + ASHRAE — CO2, TVOC, formaldehyde, temp, humidity
-// These power the on-screen "Recommended Actions" so advice traces to a standard.
+// Air-quality guidance, sourced from the backend.
+//
+// This file used to hardcode its own EPA/WHO/ASHRAE bands, which disagreed
+// with the backend alert limits, with the admin threshold rows and with the
+// mobile app. It now reads the canonical table from
+// GET /api/air-quality/bands — the same table the alerting code uses — so the
+// colour on a tile and the alert in the feed can no longer contradict.
+//
+// The exported functions stay SYNCHRONOUS on purpose: they are called during
+// render by a dozen components. `initAirQualityBands()` hydrates a module-level
+// cache once at startup (see src/main.jsx); until then, and whenever the fetch
+// fails, the bundled fallback below answers. The fallback is generated —
+// `node scripts/generateClientBands.js` in web/backend — so it cannot drift
+// from the server table.
 
-export const CATEGORY_COLORS = {
-  'Good': '#16a34a',
-  'Moderate': '#f59e0b',
-  'Unhealthy (SG)': '#ea580c',
-  'Unhealthy': '#dc2626',
-  'Very Unhealthy': '#9333ea',
-  'Hazardous': '#7f1d1d',
+import FALLBACK_BANDS from './airQualityBands.fallback.json'
+
+let BANDS = FALLBACK_BANDS
+
+/** Category name -> hex. Mutated in place on hydration so imported references stay live. */
+export const CATEGORY_COLORS = {}
+
+/** Field key -> served definition. Rebuilt on hydration. */
+let FIELD_MAP = {}
+
+function applyBands(next) {
+  BANDS = next
+
+  for (const key of Object.keys(CATEGORY_COLORS)) delete CATEGORY_COLORS[key]
+  for (const c of BANDS.categories) CATEGORY_COLORS[c.name] = c.color
+
+  FIELD_MAP = Object.fromEntries(BANDS.fields.map((f) => [f.key, f]))
 }
+
+applyBands(FALLBACK_BANDS)
+
+/**
+ * Fetch the canonical bands and replace the cache. Call once at startup.
+ * Never throws — a failure leaves the bundled fallback in place, which is a
+ * degraded but correct table rather than a blank screen.
+ */
+export async function initAirQualityBands() {
+  try {
+    const res = await fetch('/api/air-quality/bands')
+    if (!res.ok) throw new Error(`bands request failed (${res.status})`)
+    const json = await res.json()
+    if (!json?.categories?.length || !json?.fields?.length) throw new Error('bands payload malformed')
+    applyBands(json)
+    return json
+  } catch (err) {
+    console.warn('[air-quality] using bundled band table:', err.message)
+    return null
+  }
+}
+
+/** The limits currently in force (admin override merged over canonical). */
+export function airQualityLimits() {
+  return BANDS.limits
+}
+
+/** Where those limits came from: 'active' | 'newest' | 'canonical'. */
+export function airQualityLimitsSource() {
+  return BANDS.limitsSource
+}
+
+/** Attribution line for the standards behind the numbers. */
+export function airQualitySource() {
+  return BANDS.source
+}
+
+/** The served field definitions, in display order. */
+export function airQualityFields() {
+  return BANDS.fields
+}
+
+/**
+ * The editable limit keys, flattened the way the thresholds collection stores
+ * them: a scalar per one-sided field, Min/Max for the two-sided ones.
+ * Returns [{ key, field, label, unit, alerting, bound }].
+ */
+export function airQualityLimitKeys() {
+  const keys = []
+  for (const f of BANDS.fields) {
+    if (f.twoSided) {
+      keys.push({ key: `${f.key}Min`, field: f.key, label: `${f.label} min`, unit: f.unit, alerting: f.alerting, bound: 'min' })
+      keys.push({ key: `${f.key}Max`, field: f.key, label: `${f.label} max`, unit: f.unit, alerting: f.alerting, bound: 'max' })
+    } else {
+      keys.push({ key: f.key, field: f.key, label: f.label, unit: f.unit, alerting: f.alerting, bound: 'max' })
+    }
+  }
+  return keys
+}
+
+// ---------------------------------------------------------------------------
+// AQI
+// ---------------------------------------------------------------------------
 
 export function aqiCategory(aqi) {
   if (aqi == null) return null
-  if (aqi <= 50) return 'Good'
-  if (aqi <= 100) return 'Moderate'
-  if (aqi <= 150) return 'Unhealthy (SG)'
-  if (aqi <= 200) return 'Unhealthy'
-  if (aqi <= 300) return 'Very Unhealthy'
-  return 'Hazardous'
-}
-
-// Overall AQI recommended actions (EPA AirNow).
-const AQI_ACTIONS = {
-  'Good': [
-    'Air quality is healthy — normal activities are fine.',
-    'Keep windows open for fresh-air ventilation.',
-  ],
-  'Moderate': [
-    'Air quality is acceptable.',
-    'Unusually sensitive people should watch for symptoms during long or heavy activity.',
-  ],
-  'Unhealthy (SG)': [
-    'Sensitive groups (children, elderly, asthma/heart conditions) should limit prolonged or heavy exertion.',
-    'Move strenuous activities indoors and improve ventilation.',
-  ],
-  'Unhealthy': [
-    'Everyone should limit prolonged outdoor exertion.',
-    'Close windows and run a HEPA / MERV-13+ air purifier.',
-    'Sensitive groups should stay indoors.',
-  ],
-  'Very Unhealthy': [
-    'Everyone should avoid outdoor exertion and stay indoors.',
-    'Seal the room and run an air purifier; wear an N95 respirator if you must go out.',
-    'Avoid adding indoor pollution — no frying, vacuuming, or candles.',
-  ],
-  'Hazardous': [
-    'Health emergency — everyone stay indoors with windows shut and air filtered.',
-    'Wear an N95 respirator outdoors; relocate to a clean-air shelter if the room cannot stay clean.',
-    'Seek medical help for any breathing difficulty.',
-  ],
+  const cats = BANDS.categories
+  for (const c of cats) {
+    if (aqi <= c.max) return c.name
+  }
+  return cats[cats.length - 1].name
 }
 
 export function aqiAdvisory(aqi) {
-  const category = aqiCategory(aqi)
-  if (!category) return null
+  if (aqi == null) return null
+  const cats = BANDS.categories
+  const cat = cats.find((c) => aqi <= c.max) || cats[cats.length - 1]
   return {
-    category,
-    color: CATEGORY_COLORS[category],
-    actions: AQI_ACTIONS[category] || [],
+    category: cat.name,
+    color: cat.color,
+    actions: cat.actions || [],
   }
 }
 
-// Per-component qualitative reading + concrete action.
-// Returns { label, unit, level, color, advice, ok } or null when value is null.
+// ---------------------------------------------------------------------------
+// Per-component insights
+// ---------------------------------------------------------------------------
+
+// The UI addresses components by short lowercase keys; the canonical table uses
+// the sensor field names, which are fixed by the MQTT contract.
+const KEY_TO_FIELD = {
+  pm1: 'PM1',
+  pm25: 'PM25',
+  pm10: 'PM10',
+  co2: 'CO2',
+  tvoc: 'TVOC',
+  hcho: 'Formaldehyde',
+  temp: 'Temperature',
+  humidity: 'Humidity',
+}
+
+/** True when the value sits inside the field's acceptable range. */
+function isOk(field, v) {
+  if (field.twoSided) {
+    if (field.alertLow != null && v < field.alertLow) return false
+    if (field.alertHigh != null && v > field.alertHigh) return false
+    return true
+  }
+  return field.alertHigh == null || v <= field.alertHigh
+}
+
+/**
+ * Per-component qualitative reading + concrete action.
+ * Returns { label, unit, level, color, advice, derived, ok } or null.
+ *
+ * `derived` marks CO2 and formaldehyde: the FS00905B simulates both from its
+ * VOC element rather than measuring them, and the UI must say so.
+ */
 export function componentInsight(key, v) {
   if (v == null) return null
-  const G = CATEGORY_COLORS['Good']
-  const M = CATEGORY_COLORS['Moderate']
-  const U = CATEGORY_COLORS['Unhealthy (SG)']
-  const R = CATEGORY_COLORS['Unhealthy']
-  const P = CATEGORY_COLORS['Very Unhealthy']
-  const mk = (label, unit, level, color, advice, ok = false) => ({ label, unit, level, color, advice, ok })
 
-  switch (key) {
-    case 'pm25':
-      if (v <= 12) return mk('PM2.5', 'µg/m³', 'Good', G, 'Fine-particle levels are healthy.', true)
-      if (v <= 35.4) return mk('PM2.5', 'µg/m³', 'Moderate', M, 'Acceptable. Sensitive people should watch for symptoms during long exposure.')
-      if (v <= 55.4) return mk('PM2.5', 'µg/m³', 'Unhealthy (SG)', U, 'Sensitive groups should improve ventilation or run a HEPA air purifier; remove indoor sources (smoke, cooking).')
-      if (v <= 150.4) return mk('PM2.5', 'µg/m³', 'Unhealthy', R, 'Close windows, run a HEPA/MERV-13+ purifier, and stop indoor combustion. Sensitive groups stay indoors.')
-      return mk('PM2.5', 'µg/m³', 'Very Unhealthy', P, 'Heavy fine-particle pollution. Seal the room, filter the air, and wear an N95 if going out.')
-    case 'pm10':
-      if (v <= 54) return mk('PM10', 'µg/m³', 'Good', G, 'Coarse-particle (dust) levels are healthy.', true)
-      if (v <= 154) return mk('PM10', 'µg/m³', 'Moderate', M, 'Acceptable dust. Damp-dust instead of dry sweeping; sensitive people limit long exposure.')
-      if (v <= 254) return mk('PM10', 'µg/m³', 'Unhealthy (SG)', U, 'Elevated dust. Improve ventilation, run an air purifier, and avoid dry sweeping/vacuuming.')
-      if (v <= 354) return mk('PM10', 'µg/m³', 'Unhealthy', R, 'High dust. Close windows, filter the air, and remove dust sources.')
-      return mk('PM10', 'µg/m³', 'Very Unhealthy', P, 'Very high dust. Limit exposure and filter the air now.')
-    case 'co2':
-      if (v <= 800) return mk('CO₂', 'ppm', 'Good', G, 'Well-ventilated space.', true)
-      if (v <= 1000) return mk('CO₂', 'ppm', 'Moderate', M, 'Acceptable. Bring in fresh air if people feel drowsy (ASHRAE target ≈ 1000 ppm).')
-      if (v <= 1500) return mk('CO₂', 'ppm', 'Stuffy', U, 'Air is stuffy — increase ventilation: open windows/doors or boost mechanical airflow.')
-      if (v <= 2000) return mk('CO₂', 'ppm', 'Poor', R, 'Poor ventilation. Open windows/doors and reduce room occupancy to bring CO₂ down.')
-      return mk('CO₂', 'ppm', 'Very Poor', P, 'High CO₂ causes headaches and poor concentration. Ventilate the room immediately.')
-    case 'tvoc':
-      if (v <= 300) return mk('TVOC', 'µg/m³', 'Good', G, 'Low levels of volatile organic compounds.', true)
-      if (v <= 500) return mk('TVOC', 'µg/m³', 'Moderate', M, 'Acceptable. Ventilate if you notice odors.')
-      if (v <= 1000) return mk('TVOC', 'µg/m³', 'Elevated', U, 'Increase fresh air and check sources (cleaners, paint, new furniture, air fresheners).')
-      if (v <= 3000) return mk('TVOC', 'µg/m³', 'High', R, 'Ventilate well and remove the source; symptoms (irritation, headache) possible.')
-      return mk('TVOC', 'µg/m³', 'Very High', P, 'Ventilate the room now and identify/remove the emitting source.')
-    case 'hcho': // formaldehyde — EPA indoor limit ≈ 0.1 ppm (100 ppb)
-      if (v <= 100) return mk('Formaldehyde', 'ppb', 'Good', G, 'Below the EPA indoor guideline (0.1 ppm).', true)
-      if (v <= 300) return mk('Formaldehyde', 'ppb', 'Elevated', U, 'Ventilate — especially with new pressed-wood furniture; use low-emitting materials.')
-      return mk('Formaldehyde', 'ppb', 'High', R, 'Ventilate aggressively, run AC/dehumidifier, and remove or seal the source.')
-    case 'temp':
-      if (v >= 20 && v <= 24.5) return mk('Temperature', '°C', 'Comfortable', G, 'Within the ASHRAE comfort range (20–24.5 °C).', true)
-      if ((v >= 17 && v < 20) || (v > 24.5 && v <= 28)) return mk('Temperature', '°C', 'Fair', M, 'Slightly outside the comfort range — adjust heating/cooling or use fans.')
-      if (v < 17) return mk('Temperature', '°C', 'Cold', R, 'Too cold for comfort. Add heating.')
-      return mk('Temperature', '°C', 'Hot', R, 'Too warm for comfort. Improve cooling or ventilation.')
-    case 'humidity':
-      if (v >= 30 && v <= 50) return mk('Humidity', '%', 'Comfortable', G, 'Within the EPA healthy range (30–50%).', true)
-      if ((v > 50 && v <= 60) || (v >= 25 && v < 30)) return mk('Humidity', '%', 'Fair', M, 'Slightly outside the ideal 30–50% range — monitor.')
-      if (v > 60) return mk('Humidity', '%', 'Too Humid', R, 'High humidity encourages mold and dust mites. Dehumidify, fix leaks, and ventilate.')
-      return mk('Humidity', '%', 'Too Dry', R, 'Very dry air irritates eyes, skin, and airways. Use a humidifier.')
-    default:
-      return null
+  const fieldKey = KEY_TO_FIELD[key]
+  const field = fieldKey ? FIELD_MAP[fieldKey] : null
+  if (!field) return null
+
+  const band =
+    field.bands.find((b) => b.max == null || v <= b.max) ||
+    field.bands[field.bands.length - 1]
+
+  return {
+    label: field.label,
+    unit: field.unit,
+    level: band.level,
+    color: band.color,
+    advice: band.advice,
+    derived: field.derived,
+    ok: isOk(field, v),
   }
 }
 
-// Build a list of component insights that need attention (not OK), from a reading.
+/** Build a list of component insights that need attention (not OK), from a reading. */
 export function flaggedComponents(reading) {
   if (!reading) return []
   const map = [

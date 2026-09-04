@@ -8,16 +8,11 @@ import { CATEGORY_COLORS } from '../utils/airQualityGuidance'
 import bewairLogoWhite from '../assets/bewair_logo_white.png'
 import bewairLogoBlack from '../assets/bewair_logo_black.png'
 
-// The real AQI scale this system already uses, hazardous → good — the
-// landing page's signature visual is this exact gradient, not an invented one.
-const AQI_SWEEP = [
-  CATEGORY_COLORS['Hazardous'],
-  CATEGORY_COLORS['Very Unhealthy'],
-  CATEGORY_COLORS['Unhealthy'],
-  CATEGORY_COLORS['Unhealthy (SG)'],
-  CATEGORY_COLORS['Moderate'],
-  CATEGORY_COLORS['Good'],
-]
+// The real AQI scale this system already uses, worst → best — the landing
+// page's signature visual is this exact gradient, not an invented one.
+// Derived from the canonical category order (Good first) rather than named
+// literally, so a change to the DENR table cannot leave a hole in the gradient.
+const AQI_SWEEP = Object.values(CATEGORY_COLORS).reverse()
 
 const SAMPLE_READINGS = [
   { label: 'PM2.5', value: '12', unit: 'µg/m³' },

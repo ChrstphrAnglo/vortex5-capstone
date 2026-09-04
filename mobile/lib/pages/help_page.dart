@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../utils/aqi_colors.dart';
+import '../services/air_quality_bands.dart';
 
 class HelpPage extends StatelessWidget {
   const HelpPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Null until the first fetch lands; every section below degrades to a
+    // "still loading" line rather than showing numbers this page invented.
+    final bands = AirQualityBands.current;
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -22,33 +26,43 @@ class HelpPage extends StatelessWidget {
           _sectionTitle('Understanding AQI'),
           const SizedBox(height: 4),
           Text(
-            'The overall Air Quality Index (AQI) shown on Home is grouped '
-            'into six bands:',
+            'The overall Air Quality Index (AQI) shown on Home follows the '
+            'Philippine national scale (DENR), grouped into six bands:',
             style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 13),
           ),
           const SizedBox(height: 12),
-          _aqiLegendRow(aqiGood, 'Good', '0–50'),
-          _aqiLegendRow(aqiModerate, 'Moderate', '51–100'),
-          _aqiLegendRow(aqiUsg, 'Unhealthy for Sensitive Groups', '101–150'),
-          _aqiLegendRow(aqiUnhealthy, 'Unhealthy', '151–200'),
-          _aqiLegendRow(aqiVeryUnhealthy, 'Very Unhealthy', '201–300'),
-          _aqiLegendRow(aqiHazardous, 'Hazardous', '300+'),
+          // Legend and per-sensor ranges both come from the canonical band
+          // table the backend serves, so this page cannot describe one scale
+          // while the gauge on Home colours by another.
+          ...(bands?.categories ?? const <AqiCategory>[])
+              .map((c) => _aqiLegendRow(c.color, c.name, c.range)),
+          if (bands == null)
+            Text(
+              'Band details are still loading.',
+              style: GoogleFonts.inter(color: const Color(0xFF94A3B8), fontSize: 13),
+            ),
 
           const SizedBox(height: 28),
           _sectionTitle('Sensor Readings Explained'),
           const SizedBox(height: 12),
-          _readingRow('PM2.5 (µg/m³)',
-              'Good ≤12 · Moderate ≤35.4 · Unhealthy (SG) ≤55.4 · Unhealthy ≤150.4 · Very Unhealthy >150.4'),
-          _readingRow('PM10 (µg/m³)',
-              'Good ≤54 · Moderate ≤154 · Unhealthy (SG) ≤254 · Unhealthy ≤354 · Very Unhealthy >354'),
-          _readingRow('CO₂ (ppm)',
-              'Good ≤800 · Moderate ≤1000 · Stuffy ≤1500 · Poor ≤2000 · Very Poor >2000'),
-          _readingRow('TVOC (µg/m³)',
-              'Good ≤300 · Moderate ≤500 · Elevated ≤1000 · High ≤3000 · Very High >3000'),
-          _readingRow('Temperature (°C)',
-              'Comfortable 20–26 · Cool 17–20 · Warm 26–30 · Cold <17 · Hot >30'),
-          _readingRow('Humidity (%)',
-              'Comfortable 30–60 · Dry 20–30 · Humid 60–70 · Too Dry <20 · Too Humid >70'),
+          ...(bands?.fields.values ?? const <AirQualityField>[])
+              .where((f) => f.key != 'Aqi')
+              .map((f) => _readingRow(
+                    '${f.label}${f.unit.isEmpty ? '' : ' (${f.unit})'}'
+                    '${f.derived ? ' · derived' : ''}',
+                    f.summary,
+                  )),
+          if (bands != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(
+                'CO₂ and formaldehyde are estimated by the sensor from its VOC '
+                'element rather than measured directly — read them as trends.\n\n'
+                'Sources: ${bands.source}',
+                style: GoogleFonts.inter(
+                    color: const Color(0xFF94A3B8), fontSize: 11.5, height: 1.45),
+              ),
+            ),
 
           const SizedBox(height: 28),
           _sectionTitle('Connecting a New Sensor'),

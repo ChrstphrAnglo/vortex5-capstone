@@ -1,17 +1,15 @@
 const Device = require('../models/DeviceModel')
 const User = require('../models/userModel')
 const AqiModel = require('../models/AqiModel')
-const ThresholdModel = require('../models/ThresholdModel')
 const getVisibleDeviceIds = require('../utils/visibleDevices')
+const { resolveLimits } = require('../utils/thresholdLimits')
+const { evaluateReading } = require('../utils/alertEvaluator')
+const { categoryFor } = require('../config/airQualityBands')
 
-function aqiCategory(aqi) {
-  if (aqi <= 50)  return 'Good'
-  if (aqi <= 100) return 'Moderate'
-  if (aqi <= 150) return 'Unhealthy (SG)'
-  if (aqi <= 200) return 'Unhealthy'
-  if (aqi <= 300) return 'Very Unhealthy'
-  return 'Hazardous'
-}
+// Categories, limits and the alert rule all come from config/airQualityBands.js
+// via the shared helpers. This file used to carry its own copy of each, so the
+// alert cards here could disagree with /api/alerts/current about the same room.
+const aqiCategory = categoryFor
 
 // Admin-only: bundled dashboard data — KPIs, device cards, current alerts.
 const getDashboardSummary = async (req, res) => {
@@ -66,46 +64,38 @@ const getDashboardSummary = async (req, res) => {
       ? Math.round(activeReadings.reduce((s, v) => s + v, 0) / activeReadings.length)
       : null
 
-    // 4. Current alerts: devices above threshold right now
-    //    Pull the most recent threshold doc (or use defaults)
-    const thresholdDoc = await ThresholdModel.findOne().sort({ createdAt: -1 }).lean()
-    const limits = {
-      Aqi:          thresholdDoc?.Aqi          ?? 100,
-      PM25:         thresholdDoc?.PM25         ?? 40,
-      PM10:         thresholdDoc?.PM10         ?? 100,
-      CO2:          thresholdDoc?.CO2          ?? 1000,
-      TVOC:         thresholdDoc?.TVOC         ?? 500,
-      Formaldehyde: thresholdDoc?.Formaldehyde ?? 100,
-      Temperature:  thresholdDoc?.Temperature  ?? 32,
-      Humidity:     thresholdDoc?.Humidity     ?? 80,
-    }
+    // 4. Current alerts: the limits in force are the active threshold row
+    //    merged over the canonical bands.
+    const { limits } = await resolveLimits()
 
     const alerts = []
     for (const d of enrichedDevices) {
-      // Skip offline devices — stale readings shouldn't trigger active alerts.
+      // Skip offline devices — stale readings must not trigger active alerts.
       if (d.status === 'offline') continue
       const r = readingMap[d.deviceId]
       if (!r) continue
-      const fields = ['Aqi', 'PM25', 'PM10', 'CO2', 'TVOC', 'Formaldehyde']
-      for (const f of fields) {
-        if (r[f] != null && r[f] > limits[f]) {
-          alerts.push({
-            deviceId: d.deviceId,
-            name: d.name,
-            room: d.room,
-            field: f,
-            value: r[f],
-            limit: limits[f],
-            severity: r[f] > limits[f] * 1.5 ? 'high' : 'warning',
-            at: r.createdAt,
-          })
-        }
+      // NOTE: this card list grades the LATEST row, not the 5-minute dwell mean
+      // that /api/alerts/current uses, because the dashboard is a live status
+      // panel rather than a notification feed. Same limits, same rule, shorter
+      // window — so a number here can lead the alerts page by a few minutes.
+      for (const hit of evaluateReading(r, limits)) {
+        alerts.push({
+          deviceId: d.deviceId,
+          name: d.name,
+          room: d.room,
+          ...hit,
+          at: r.createdAt,
+        })
       }
     }
-    // sort by severity then magnitude
+
+    // sort by severity then magnitude. Two-sided fields can alert for being
+    // too LOW, where value/limit is below 1 — invert those so a room at 15 °C
+    // sorts as badly as one at 38 °C instead of falling to the bottom.
+    const magnitude = (a) => (a.direction === 'below' ? a.limit / a.value : a.value / a.limit)
     alerts.sort((a, b) => {
       if (a.severity !== b.severity) return a.severity === 'high' ? -1 : 1
-      return (b.value / b.limit) - (a.value / a.limit)
+      return magnitude(b) - magnitude(a)
     })
 
     res.status(200).json({

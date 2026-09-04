@@ -1,5 +1,23 @@
 const Threshold = require('../models/ThresholdModel')
 const logAudit = require('../utils/logAudit');
+const { LIMIT_KEYS } = require('../utils/thresholdLimits')
+
+// A threshold row OVERRIDES config/airQualityBands.js field by field: a key
+// left blank stays null and the canonical value applies. Picking the keys off
+// LIMIT_KEYS rather than listing them here means adding a field to the
+// canonical table cannot silently skip the admin form.
+//
+// Temperature and Humidity arrive as TemperatureMin/TemperatureMax and
+// HumidityMin/HumidityMax — they are two-sided, because too cold and too dry
+// are real problems in a room, not just too hot and too humid.
+function pickLimits(body) {
+  const out = {}
+  for (const key of LIMIT_KEYS) {
+    const v = body[key]
+    out[key] = v === '' || v === undefined || v === null ? null : Number(v)
+  }
+  return out
+}
 
 /* ---------------- GET ---------------- */
 
@@ -11,20 +29,12 @@ const getThresholds = async (req, res) => {
 /* ---------------- CREATE ---------------- */
 
   const createThreshold = async (req, res) => {
-    const { label, Aqi, PM1, PM25, PM10, TVOC, CO2, Formaldehyde, Temperature, Humidity } = req.body
+    const { label } = req.body
 
     try {
       const threshold = await Threshold.create({
         label,
-        Aqi,
-        PM1,
-        PM25,
-        PM10,
-        TVOC,
-        CO2,
-        Formaldehyde,
-        Temperature,
-        Humidity
+        ...pickLimits(req.body)
       })
 
       logAudit({
@@ -151,16 +161,45 @@ const deleteAdvisory = async (req, res) => {
   }
 }
 
+/* ---------------- SET ACTIVE ---------------- */
+
+// Exactly one threshold row may be active. Alerting reads that row; if none is
+// marked, the code falls back to the newest row and then to sourced defaults.
+const setActiveThreshold = async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const threshold = await Threshold.findById(id)
+    if (!threshold) {
+      return res.status(404).json({ error: "Threshold not found" })
+    }
+
+    await Threshold.updateMany({ _id: { $ne: id } }, { $set: { active: false } })
+    threshold.active = true
+    await threshold.save()
+
+    logAudit({
+      module: "Configuration",
+      action: `Set threshold "${threshold.label}" as the active alert threshold`,
+      user: req.user?.email || "Unknown"
+    })
+
+    res.status(200).json(threshold)
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+}
+
 /* ---------------- UPDATE THRESHOLD ---------------- */
 
 const updateThreshold = async (req, res) => {
   const { id } = req.params
-  const { label, Aqi, PM1, PM25, PM10, TVOC, CO2, Formaldehyde, Temperature, Humidity } = req.body
+  const { label } = req.body
 
   try {
     const threshold = await Threshold.findByIdAndUpdate(
       id,
-      { label, Aqi, PM1, PM25, PM10, TVOC, CO2, Formaldehyde, Temperature, Humidity },
+      { label, ...pickLimits(req.body) },
       { new: true }
     )
 
@@ -183,6 +222,7 @@ const updateThreshold = async (req, res) => {
 module.exports = {
   getThresholds,
   createThreshold,
+  setActiveThreshold,
   deleteThreshold,
   updateThreshold,
   addAdvisory,
