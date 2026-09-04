@@ -24,12 +24,15 @@ const GROUPS = airQualityFieldGroups()
 // Which stored limit keys a field owns. Two-sided fields own a Min/Max pair.
 const keysOf = (f) => (f.twoSided ? [`${f.key}Min`, `${f.key}Max`] : [f.key])
 
-// The caption under each value: where the number comes from, then any way this
-// field departs from the norm. Both are read from the served metadata rather
-// than a list of field names kept here, which would drift.
+// The caption under each value carries only the ways a field departs from the
+// norm, read from the served metadata rather than a list of field names kept
+// here, which would drift. Most fields have nothing to say and show no caption.
+//
+// The standards citations are deliberately NOT shown per field. They remain in
+// the served table (and in config/airQualityBands.js, where every number is
+// sourced) for anyone who needs them.
 const captionOf = (f) =>
   [
-    f.citation,
     !f.alerting && 'reported through AQI, no separate alert',
     f.derived && 'simulated by the sensor, not measured',
   ]
@@ -379,10 +382,16 @@ const Thresholds = () => {
                     {limitText(f)}
                     {f.unit && <span className="tl-unit">{f.unit}</span>}
                   </p>
-                  <p className="tl-caption">
-                    {captionOf(f)}
-                    {overridden && <span className="tl-overridden"> · overridden</span>}
-                  </p>
+                  {(captionOf(f) || overridden) && (
+                    <p className="tl-caption">
+                      {captionOf(f)}
+                      {overridden && (
+                        <span className="tl-overridden">
+                          {captionOf(f) ? ' · overridden' : 'overridden'}
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 {/* The bar supplements the number, so it carries no information
