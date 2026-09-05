@@ -12,7 +12,7 @@ import ReactECharts from 'echarts-for-react'
 import dayjs from 'dayjs'
 import { DataGrid } from '@mui/x-data-grid'
 
-import { Download } from 'lucide-react'
+import { Download, Activity, Radio, AlertTriangle } from 'lucide-react'
 import jsPDF from 'jspdf'
 import { useAuthContext } from '../hooks/useAuthContext'
 import { useTheme as useAppTheme } from '../hooks/useTheme'
@@ -679,39 +679,36 @@ const Analytics = () => {
 
               {hasData && (
                 <>
-                  <Box sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
-                    gap: { xs: 2.5, sm: 0 },
-                    pt: 2,
-                    borderTop: '1px solid',
-                    borderColor: 'divider',
-                    '& > *:not(:first-of-type)': { borderLeft: { sm: '1px solid' }, borderColor: 'divider', pl: { sm: 3 } },
-                  }}>
-                    <SummaryFigure
-                      label="Average AQI"
-                      value={data.kpis.avg}
-                      accent={CATEGORY_COLORS[data.kpis.avgCategory]}
-                      note={data.kpis.avgCategory}
-                      sub={categoryNote(data.kpis.avgCategory)}
-                      fraction={aqiScaleMax ? Math.min(1, (data.kpis.avg ?? 0) / aqiScaleMax) : null}
-                    />
-                    <SummaryFigure
-                      label="Data coverage"
-                      value={`${data.coverage.pct}%`}
-                      accent={data.coverage.low ? CATEGORY_COLORS['Very Unhealthy'] : undefined}
-                      note={`${fmtHours(data.coverage.observedMinutes / 60)} of ${fmtHours(data.coverage.expectedMinutes / 60)} hrs observed`}
-                      sub={data.coverage.low ? 'Some readings missing — results may not represent the full period.' : 'Readings cover the period.'}
-                      fraction={(data.coverage.pct ?? 0) / 100}
-                    />
-                    <SummaryFigure
-                      label="Hours over AQI limit"
-                      value={aqiExceedance ? aqiExceedance.hours : 0}
-                      accent={(aqiExceedance?.hours ?? 0) > 0 ? CATEGORY_COLORS['Very Unhealthy'] : CATEGORY_COLORS['Good']}
-                      note={`of ${aqiExceedance?.expectedHours ?? 0} hrs in period`}
-                      sub={`Limit ${limits.Aqi ?? 100} AQI`}
-                      fraction={aqiExceedance?.expectedHours ? Math.min(1, aqiExceedance.hours / aqiExceedance.expectedHours) : 0}
-                    />
+                  <Box sx={{ pt: 2, mt: 0.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <div className="dash-kpis analytics-kpis">
+                      <AnalyticsKpiTile
+                        icon={<Activity size={20} />}
+                        label="Average AQI"
+                        value={data.kpis.avg}
+                        accent={CATEGORY_COLORS[data.kpis.avgCategory]}
+                        hint={data.kpis.avgCategory}
+                        sub={categoryNote(data.kpis.avgCategory)}
+                        fraction={aqiScaleMax ? Math.min(1, (data.kpis.avg ?? 0) / aqiScaleMax) : null}
+                      />
+                      <AnalyticsKpiTile
+                        icon={<Radio size={20} />}
+                        label="Data coverage"
+                        value={`${data.coverage.pct}%`}
+                        accent={data.coverage.low ? CATEGORY_COLORS['Very Unhealthy'] : undefined}
+                        hint={`${fmtHours(data.coverage.observedMinutes / 60)} of ${fmtHours(data.coverage.expectedMinutes / 60)} hrs observed`}
+                        sub={data.coverage.low ? 'Some readings missing — results may not represent the full period.' : 'Readings cover the period.'}
+                        fraction={(data.coverage.pct ?? 0) / 100}
+                      />
+                      <AnalyticsKpiTile
+                        icon={<AlertTriangle size={20} />}
+                        label="Hours over AQI limit"
+                        value={aqiExceedance ? aqiExceedance.hours : 0}
+                        accent={(aqiExceedance?.hours ?? 0) > 0 ? CATEGORY_COLORS['Very Unhealthy'] : CATEGORY_COLORS['Good']}
+                        hint={`of ${aqiExceedance?.expectedHours ?? 0} hrs in period`}
+                        sub={`Limit ${limits.Aqi ?? 100} AQI`}
+                        fraction={aqiExceedance?.expectedHours ? Math.min(1, aqiExceedance.hours / aqiExceedance.expectedHours) : 0}
+                      />
+                    </div>
                   </Box>
 
                   {data.legacyPct > 0 && (
@@ -932,31 +929,32 @@ const Analytics = () => {
 
 // ---------------------------------------------------------------------------
 
-// A headline figure. No icon: an icon here labels nothing the text does not.
-// A stat tile whose fill bar is not decoration: its width is the same number
-// the tile is reporting, so "how full is the bar" and "how good is this
-// figure" are the same question. `fraction` is 0–1, or omitted for figures
-// with no natural scale to show one against.
-const SummaryFigure = ({ label, value, note, sub, accent, fraction }) => (
-  <Box>
-    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>{label}</Typography>
-    <Typography sx={{ fontSize: 32, fontWeight: 800, lineHeight: 1.15, color: accent || 'text.primary', fontVariantNumeric: 'tabular-nums', mt: 0.25 }}>
-      {value}
-    </Typography>
+// A KPI tile matching the Dashboard page's .dash-kpi tiles (same classes,
+// same accent-top-border pattern), via the .analytics-kpi variant that only
+// bumps the type scale up slightly for this page's larger figures. The fill
+// bar is not decoration: its width is the same number the tile reports, so
+// "how full is the bar" and "how good is this figure" are the same question.
+// `fraction` is 0–1, or omitted for figures with no natural scale to show
+// one against.
+const AnalyticsKpiTile = ({ icon, label, value, hint, sub, accent, fraction }) => (
+  <div className="dash-kpi analytics-kpi" style={{ borderTopColor: accent }}>
+    <div className="dash-kpi-icon" style={{ color: accent }}>{icon}</div>
+    <div className="dash-kpi-label">{label}</div>
+    <div className="dash-kpi-value" style={{ color: accent }}>{value}</div>
     {typeof fraction === 'number' && (
-      <Box sx={{ height: 5, borderRadius: 999, bgcolor: 'var(--color-border-subtle, #eef2f6)', overflow: 'hidden', mt: 1, mb: 0.75 }}>
-        <Box sx={{
+      <div style={{ height: 5, borderRadius: 999, background: 'var(--color-border-subtle, #eef2f6)', overflow: 'hidden', margin: '6px 0' }}>
+        <div style={{
           height: '100%',
           width: `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`,
-          bgcolor: accent || 'var(--color-text-tertiary, #94a3b8)',
+          background: accent || 'var(--color-text-tertiary, #94a3b8)',
           borderRadius: 999,
           transition: 'width 0.4s ease',
         }} />
-      </Box>
+      </div>
     )}
-    {note && <Typography variant="body2" sx={{ fontWeight: 600, color: accent || 'text.secondary' }}>{note}</Typography>}
-    {sub && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, lineHeight: 1.4 }}>{sub}</Typography>}
-  </Box>
+    {hint && <div className="analytics-kpi-hint" style={{ color: accent }}>{hint}</div>}
+    {sub && <div className="dash-kpi-sub">{sub}</div>}
+  </div>
 )
 
 const RoomRow = ({ room }) => {
