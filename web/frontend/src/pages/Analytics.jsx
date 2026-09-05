@@ -1,40 +1,32 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useAuthContext } from '../hooks/useAuthContext'
-import { useTheme as useAppTheme } from '../hooks/useTheme'
-import dayjs from 'dayjs'
-import ReactECharts from 'echarts-for-react'
-
+import { useEffect, useMemo, useState } from 'react'
+import {
+  Box, Card, CardContent, Typography, Grid, FormControl, InputLabel, Select,
+  MenuItem, Switch, FormControlLabel, CircularProgress, Alert, Button, Chip,
+  Table, TableBody, TableCell, TableHead, TableRow, CssBaseline, Tooltip,
+} from '@mui/material'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
-import CssBaseline from '@mui/material/CssBaseline'
-import Box from '@mui/material/Box'
-import Grid from '@mui/material/Grid'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
-import Typography from '@mui/material/Typography'
-import MenuItem from '@mui/material/MenuItem'
-import FormControl from '@mui/material/FormControl'
-import InputLabel from '@mui/material/InputLabel'
-import Select from '@mui/material/Select'
-import Alert from '@mui/material/Alert'
-import CircularProgress from '@mui/material/CircularProgress'
-import Chip from '@mui/material/Chip'
-import Switch from '@mui/material/Switch'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import Button from '@mui/material/Button'
-
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
+import ReactECharts from 'echarts-for-react'
+import dayjs from 'dayjs'
 import { DataGrid } from '@mui/x-data-grid'
 
-import { Activity, TrendingUp, TrendingDown, Minus, Clock, ShieldCheck, Download } from 'lucide-react'
-import html2canvas from 'html2canvas'
+import { Download } from 'lucide-react'
 import jsPDF from 'jspdf'
-import { CATEGORY_COLORS } from '../utils/airQualityGuidance'
+import { useAuthContext } from '../hooks/useAuthContext'
+import { useTheme as useAppTheme } from '../hooks/useTheme'
+import {
+  CATEGORY_COLORS,
+  airQualityCategories,
+  airQualityLimits,
+  airQualitySource,
+  categoryNote,
+} from '../utils/airQualityGuidance'
 
 const DOW_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-// Pollutant metadata: label + unit for tables/charts.
+// Pollutant metadata: label + unit for tables and charts.
 const POLLUTANTS = [
   { key: 'Aqi', label: 'AQI', unit: '' },
   { key: 'PM25', label: 'PM 2.5', unit: 'µg/m³' },
@@ -59,8 +51,13 @@ const METRIC_OPTIONS = [
 ]
 
 const FIELD_LABELS = {
-  Aqi: 'AQI', PM25: 'PM 2.5', PM10: 'PM 10', CO2: 'CO₂',
-  TVOC: 'TVOC', Formaldehyde: 'HCHO',
+  Aqi: 'AQI', PM1: 'PM 1.0', PM25: 'PM 2.5', PM10: 'PM 10', CO2: 'CO₂',
+  TVOC: 'TVOC', Formaldehyde: 'HCHO', Temperature: 'Temperature', Humidity: 'Humidity',
+}
+
+const FIELD_UNITS = {
+  Aqi: '', PM1: 'µg/m³', PM25: 'µg/m³', PM10: 'µg/m³', CO2: 'ppm',
+  TVOC: 'µg/m³', Formaldehyde: 'µg/m³', Temperature: '°C', Humidity: '%',
 }
 
 // Map a trend metric to its pollutant field (for threshold lines).
@@ -68,46 +65,55 @@ const METRIC_TO_FIELD = {
   aqi: 'Aqi', pm25: 'PM25', pm10: 'PM10', co2: 'CO2', tvoc: 'TVOC', hcho: 'Formaldehyde',
 }
 
-// Format an hour (0-23) to a 12-hour label like "6 AM" / "12 PM".
+// Format an hour (0-23) as "6 AM" / "12 PM".
 const hourLabel = (h) => {
   const period = h < 12 ? 'AM' : 'PM'
   const hr = h % 12 === 0 ? 12 : h % 12
   return `${hr} ${period}`
 }
 
-// Translate a coefficient of variation (std/avg) into plain language.
-const variabilityWord = (avg, std) => {
-  if (avg == null || std == null || avg === 0) return '—'
-  const cv = std / avg
-  if (cv < 0.1)  return 'Very stable'
-  if (cv < 0.25) return 'Stable'
-  if (cv < 0.5)  return 'Moderate'
-  return 'Highly variable'
+// Category colours are the standard's own, so a chart band has to be the same
+// hue as the pill and the Thresholds page. Only the alpha changes.
+const hexToRgba = (hex, alpha) => {
+  const h = String(hex || '').replace('#', '')
+  if (h.length !== 6) return `rgba(148,163,184,${alpha})`
+  const n = parseInt(h, 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
 }
 
-// One-line health note for an AQI category.
-const HEALTH_NOTE = {
-  'Good': 'Air quality is satisfactory.',
-  'Moderate': 'Acceptable; unusually sensitive people may feel mild effects.',
-  'Unhealthy (SG)': 'Sensitive groups should limit prolonged exertion.',
-  'Unhealthy': 'Everyone may begin to feel effects.',
-  'Very Unhealthy': 'Health alert — avoid prolonged exposure.',
-  'Hazardous': 'Emergency conditions — stay indoors.',
+const fmtHours = (h) => (h == null ? '—' : h < 10 ? String(Math.round(h * 10) / 10) : String(Math.round(h)))
+
+// Read the app's own CSS tokens so MUI and the rest of the dashboard share one
+// palette. The previous version hardcoded its own near-blacks, which is how a
+// page ends up not quite matching the app it lives in.
+const cssVar = (name, fallback) => {
+  if (typeof window === 'undefined') return fallback
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return v || fallback
 }
 
 const buildMuiTheme = (isDark) => createTheme({
   palette: {
     mode: isDark ? 'dark' : 'light',
-    primary:   { main: '#1e88ff' },
-    secondary: { main: '#18a957' },
+    primary: { main: cssVar('--color-accent', '#7c3aed') },
     background: {
-      default: isDark ? '#0c1117' : '#f6f8fb',
-      paper:   isDark ? '#161c24' : '#ffffff',
+      default: cssVar('--color-bg', isDark ? '#0c1117' : '#f6f8fb'),
+      paper: cssVar('--color-surface', isDark ? '#161c24' : '#ffffff'),
     },
+    text: {
+      primary: cssVar('--color-text-primary', isDark ? '#f1f5f9' : '#0f172a'),
+      secondary: cssVar('--color-text-secondary', isDark ? '#94a3b8' : '#475569'),
+    },
+    divider: cssVar('--color-border', isDark ? '#2a3441' : '#e2e8f0'),
   },
-  typography: { fontFamily: '"Inter", system-ui, -apple-system, sans-serif' },
+  typography: { fontFamily: 'var(--font-sans, "Inter", system-ui, sans-serif)' },
   shape: { borderRadius: 10 },
+  components: {
+    MuiCard: { styleOverrides: { root: { border: '1px solid', borderColor: cssVar('--color-border', '#e2e8f0'), boxShadow: 'none' } } },
+  },
 })
+
+// ---------------------------------------------------------------------------
 
 const Analytics = () => {
   const { user } = useAuthContext()
@@ -115,113 +121,80 @@ const Analytics = () => {
   const muiTheme = useMemo(() => buildMuiTheme(isDark), [isDark])
   const isAdmin = user && user.role === 'admin'
 
-  const [from, setFrom] = useState(dayjs().subtract(24, 'hour'))
+  // Default range is 7 days, not 24 hours: with school hours on, one day holds
+  // at most ten usable hours and on a weekend holds none.
+  const [from, setFrom] = useState(dayjs().subtract(7, 'day'))
   const [to, setTo] = useState(dayjs())
   const [deviceId, setDeviceId] = useState('all')
   const [metric, setMetric] = useState('aqi')
   const [granularity, setGranularity] = useState('auto')
+  const [schoolHours, setSchoolHours] = useState(true)
 
   const [devices, setDevices] = useState([])
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const [liveMode, setLiveMode] = useState(true)
+  const rangeHours = useMemo(() => Math.max(1, to.diff(from, 'hour')), [from, to])
+
+  // Live polling refetches ten aggregations over the whole range. That is cheap
+  // for a few hours and wasteful for a month, so it is only offered on short
+  // ranges and its interval grows with the range.
+  const liveAllowed = rangeHours <= 24
+  const [liveMode, setLiveMode] = useState(false)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [pdfLoading, setPdfLoading] = useState(false)
 
-  const reportRef = useRef(null)
+  useEffect(() => { if (!liveAllowed && liveMode) setLiveMode(false) }, [liveAllowed, liveMode])
 
-  // ECharts shared theme colors
+  const categories = airQualityCategories()
+
   const ec = useMemo(() => ({
-    axis: isDark ? '#3a4654' : '#cbd5e1',
-    label: isDark ? '#94a3b8' : '#64748b',
-    split: isDark ? '#2a3441' : '#eef2f6',
-    text: isDark ? '#f1f5f9' : '#0f172a',
-    tooltipBg: isDark ? '#1a212b' : '#ffffff',
-    tooltipBorder: isDark ? '#2a3441' : '#e2e8f0',
+    axis: cssVar('--color-border', isDark ? '#3a4654' : '#cbd5e1'),
+    label: cssVar('--color-text-tertiary', isDark ? '#94a3b8' : '#64748b'),
+    split: cssVar('--color-border-subtle', isDark ? '#2a3441' : '#eef2f6'),
+    text: cssVar('--color-text-primary', isDark ? '#f1f5f9' : '#0f172a'),
+    tooltipBg: cssVar('--color-surface', isDark ? '#1a212b' : '#ffffff'),
+    tooltipBorder: cssVar('--color-border', isDark ? '#2a3441' : '#e2e8f0'),
+    line: cssVar('--color-accent', '#7c3aed'),
   }), [isDark])
 
   // Lookup of pollutant limits from the exceedance data (field -> limit).
   const limits = useMemo(() => {
-    const map = {}
-    ;(data?.exceedances || []).forEach(e => { map[e.field] = e.limit })
+    // Start from the served limit set, which carries the two-sided fields as
+    // TemperatureMin/Max and HumidityMin/Max. The exceedance rows only ever
+    // held the one-sided fields, so looking Temperature up in them returned
+    // undefined and the stats table said "No limit" for a field that has one.
+    const map = { ...airQualityLimits() }
+    ;(data?.exceedances || []).forEach((e) => { map[e.field] = e.limit })
     return map
   }, [data])
 
-  // ---- Derived KPI values for the headline tiles ----
-  const kpiExtras = useMemo(() => {
-    if (!data) return { excHours: 0, trendDelta: null }
-    const aqiExc = (data.exceedances || []).find(e => e.field === 'Aqi')
-    const excHours = aqiExc?.hours ?? 0
-    const cur = data.comparison?.current?.avgAqi ?? 0
-    const prev = data.comparison?.previous?.avgAqi ?? 0
-    const trendDelta = prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null
-    return { excHours, trendDelta }
+  const trendDelta = useMemo(() => {
+    const cur = data?.comparison?.current?.avgAqi ?? 0
+    const prev = data?.comparison?.previous?.avgAqi ?? 0
+    return prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null
   }, [data])
 
-  // ---- Plain-language insights (feature #1) ----
-  const insights = useMemo(() => {
-    if (!data) return []
-    const out = []
-
-    // 1. Overall good %
-    if (data.kpis.count > 0) {
-      const pct = data.kpis.pctGood
-      out.push({
-        tone: pct >= 70 ? 'good' : pct >= 40 ? 'warning' : 'bad',
-        text: `Air quality was Good ${pct}% of the time during this period.`,
-      })
-    }
-
-    // 2. Worst exceedance
-    const worstExc = (data.exceedances || [])
-      .filter(e => e.field !== 'Aqi' && e.hours > 0)
-      .sort((a, b) => b.pctTime - a.pctTime)[0]
-    if (worstExc) {
-      out.push({
-        tone: 'bad',
-        text: `${FIELD_LABELS[worstExc.field] || worstExc.field} exceeded its safe limit (${worstExc.limit}) for ${worstExc.hours} hour${worstExc.hours === 1 ? '' : 's'} — ${worstExc.pctTime}% of the time.`,
-      })
-    } else if (data.kpis.count > 0) {
-      out.push({ tone: 'good', text: 'No pollutant exceeded its safety limit in this period.' })
-    }
-
-    // 3. Comparison to previous period
-    if (data.comparison && data.comparison.previous.avgAqi > 0) {
-      const cur = data.comparison.current.avgAqi
-      const prev = data.comparison.previous.avgAqi
-      const delta = Math.round(((cur - prev) / prev) * 100)
-      if (delta !== 0) {
-        out.push({
-          tone: delta < 0 ? 'good' : 'warning',
-          text: `Average AQI is ${Math.abs(delta)}% ${delta < 0 ? 'lower (better)' : 'higher (worse)'} than the previous period.`,
-        })
-      }
-    }
-
-    // 4. Worst time (from trend buckets — the bucket with the highest avg AQI)
-    if (data.buckets.length > 0) {
-      const worst = data.buckets.reduce((a, b) => (b.aqi > a.aqi ? b : a))
-      out.push({
-        tone: 'neutral',
-        text: `Air was worst around ${dayjs(worst.time).format('ddd, MMM D · h A')} (AQI ${worst.aqi}).`,
-      })
-    }
-
-    // 5. Stability of AQI
-    const aqiStat = data.pollutantStats?.Aqi
-    if (aqiStat && aqiStat.avg != null) {
-      out.push({
-        tone: 'neutral',
-        text: `AQI readings were ${variabilityWord(aqiStat.avg, aqiStat.std).toLowerCase()} (low fluctuation is better).`,
-      })
-    }
-
-    return out
+  // The single worst interval, for the caption under the trend chart.
+  const worstBucket = useMemo(() => {
+    if (!data?.buckets?.length) return null
+    return data.buckets.reduce((a, b) => (b.aqi > a.aqi ? b : a))
   }, [data])
 
-  // Fetch devices for the filter dropdown
+  const aqiExceedance = useMemo(
+    () => (data?.exceedances || []).find((e) => e.field === 'Aqi'),
+    [data]
+  )
+
+  const deviceLabel = deviceId === 'all'
+    ? 'all rooms'
+    : (devices.find((d) => d.deviceId === deviceId)?.room
+      || devices.find((d) => d.deviceId === deviceId)?.name
+      || deviceId)
+
+  // ---- data ----------------------------------------------------------------
+
   useEffect(() => {
     if (!isAdmin) return
     const fetchDevices = async () => {
@@ -231,7 +204,6 @@ const Analytics = () => {
     fetchDevices()
   }, [user, isAdmin])
 
-  // Fetch analytics on filter change + poll every 30s while live.
   useEffect(() => {
     if (!isAdmin) return
 
@@ -243,13 +215,14 @@ const Analytics = () => {
       const params = new URLSearchParams({
         from: from.toISOString(),
         to: effectiveTo.toISOString(),
+        schoolHours: String(schoolHours),
       })
       if (deviceId !== 'all') params.append('deviceId', deviceId)
       if (granularity !== 'auto') params.append('granularity', granularity)
 
       try {
         const res = await fetch(`/api/aqi/analytics?${params}`, {
-          headers: { Authorization: `Bearer ${user.token}` }
+          headers: { Authorization: `Bearer ${user.token}` },
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Failed to load analytics')
@@ -263,129 +236,95 @@ const Analytics = () => {
     }
 
     fetchAnalytics(true)
-    if (!liveMode) return
-    const interval = setInterval(() => fetchAnalytics(false), 30000)
-    return () => clearInterval(interval)
-  }, [user, isAdmin, from, to, deviceId, granularity, liveMode])
+    if (!liveMode || !liveAllowed) return
+    // Interval grows with the range so a wide window is not re-aggregated
+    // every thirty seconds.
+    const intervalMs = rangeHours <= 6 ? 30000 : 60000
+    const id = setInterval(() => fetchAnalytics(false), intervalMs)
+    return () => clearInterval(id)
+  }, [user, isAdmin, from, to, deviceId, granularity, schoolHours, liveMode, liveAllowed, rangeHours])
 
-  // ---- Chart option builders ----
+  // ---- charts --------------------------------------------------------------
+
   const trendOption = useMemo(() => {
     if (!data) return null
-    const m = METRIC_OPTIONS.find(o => o.value === metric) || METRIC_OPTIONS[0]
+    const m = METRIC_OPTIONS.find((o) => o.value === metric) || METRIC_OPTIONS[0]
     const isAqi = metric === 'aqi'
 
-    // For AQI, plot the per-bucket PEAK (so brief spikes show and the chart's
-    // peak matches the "Highest AQI" tile). Other metrics plot the bucket average.
-    const points = data.buckets.map(b => [
-      new Date(b.time).getTime(),
-      isAqi ? (b.aqiMax ?? b.aqi) : b[metric],
-    ])
+    // Plot bucket AVERAGES. The previous version plotted per-bucket maxima and
+    // then marked the maximum of those as the peak — a max of maxes, which
+    // overstates. The true period peak is marked separately below.
+    const points = data.buckets.map((b) => [new Date(b.time).getTime(), isAqi ? b.aqi : b[metric]])
+    const vals = points.map((p) => p[1]).filter((v) => v != null)
 
-    // Safety limit line for this metric (if one exists)
     const limitField = METRIC_TO_FIELD[metric]
     const limitVal = limitField ? limits[limitField] : null
 
-    const vals = points.map(p => p[1]).filter(v => v != null)
-    // Average reference line: use the TRUE period average from the backend for AQI
-    // (not the average of the plotted peaks), otherwise the mean of plotted points.
     const avgVal = isAqi
       ? (data.pollutantStats?.Aqi?.avg != null ? Math.round(data.pollutantStats.Aqi.avg) : null)
       : (vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null)
 
-    // #1 AQI category background bands (only for the AQI metric).
-    // Each band is a horizontal zone tinted with the category colour.
     const maxVal = vals.length ? Math.max(...vals) : 0
-    const AQI_BANDS = [
-      { from: 0,   to: 50,  color: 'rgba(22,163,74,0.10)' },   // Good
-      { from: 50,  to: 100, color: 'rgba(245,158,11,0.10)' },  // Moderate
-      { from: 100, to: 150, color: 'rgba(234,88,12,0.10)' },   // Unhealthy (SG)
-      { from: 150, to: 200, color: 'rgba(220,38,38,0.10)' },   // Unhealthy
-      { from: 200, to: 300, color: 'rgba(147,51,234,0.10)' },  // Very Unhealthy
-      { from: 300, to: 500, color: 'rgba(127,29,29,0.12)' },   // Hazardous
-    ]
+
+    // Category bands from the served table, not a private EPA copy.
     const bandAreas = isAqi
-      ? AQI_BANDS
-          .filter(b => b.from <= maxVal + 20) // only render bands the data reaches
-          .map(b => [{ yAxis: b.from, itemStyle: { color: b.color } }, { yAxis: b.to }])
+      ? categories
+        .filter((c) => c.min <= maxVal + 20)
+        .map((c) => [
+          { yAxis: c.min, itemStyle: { color: hexToRgba(CATEGORY_COLORS[c.name], 0.1) } },
+          { yAxis: c.max },
+        ])
       : []
 
-    // #3 Period-average reference line + #2 threshold line, combined into markLine.
     const markLineData = []
     if (avgVal != null) {
       markLineData.push({
         yAxis: avgVal,
         lineStyle: { type: 'solid', color: ec.label, width: 1, opacity: 0.6 },
-        label: {
-          formatter: `Avg ${avgVal}`, color: ec.label, position: 'insideStartTop',
-          fontSize: 11, fontWeight: 600,
-        },
+        label: { formatter: `Average ${avgVal}`, color: ec.label, position: 'insideStartTop', fontSize: 11, fontWeight: 600 },
       })
     }
     if (limitVal) {
       markLineData.push({
         yAxis: limitVal,
-        lineStyle: { type: 'dashed', color: '#dc2626', width: 1.5 },
-        label: {
-          formatter: `Limit ${limitVal}`, color: '#dc2626', position: 'insideEndTop',
-          fontSize: 11, fontWeight: 600,
-        },
+        lineStyle: { type: 'dashed', color: CATEGORY_COLORS['Very Unhealthy'] || '#dc2626', width: 1.5 },
+        label: { formatter: `Limit ${limitVal}`, color: CATEGORY_COLORS['Very Unhealthy'] || '#dc2626', position: 'insideEndTop', fontSize: 11, fontWeight: 600 },
       })
     }
 
+    // The true peak of the period, from the per-bucket maxima the backend keeps.
+    const peakBucket = isAqi && data.buckets.length
+      ? data.buckets.reduce((a, b) => ((b.aqiMax ?? 0) > (a.aqiMax ?? 0) ? b : a))
+      : null
+
     return {
-      grid: { left: 52, right: 24, top: 24, bottom: 64 },
+      grid: { left: 48, right: 24, top: 24, bottom: 64 },
       tooltip: {
         trigger: 'axis',
         backgroundColor: ec.tooltipBg,
         borderColor: ec.tooltipBorder,
         textStyle: { color: ec.text },
-        // Snap a crosshair to the nearest reading as you move across the chart.
-        axisPointer: {
-          type: 'line',
-          snap: true,
-          lineStyle: { color: '#1e88ff', width: 1, type: 'dashed' },
-          label: {
-            show: true,
-            backgroundColor: '#1e88ff',
-            formatter: (p) => dayjs(p.value).format('MMM D, h:mm A'),
-          },
-        },
+        axisPointer: { type: 'line', label: { formatter: (p) => dayjs(p.value).format('MMM D, h:mm A') } },
         formatter: (params) => {
           const p = params[0]
           const t = dayjs(p.value[0]).format('MMM D, h:mm A')
-          return `${t}<br/><b>${p.value[1]}</b>${m.unit ? ' ' + m.unit : ''}`
+          const unit = m.unit ? ` ${m.unit}` : ''
+          return `${t}<br/><b>${p.value[1]}</b>${unit}<br/><span style="opacity:.7">interval average</span>`
         },
       },
-      // Zoom: scroll/pinch to zoom in-chart, plus a draggable slider at the bottom.
-      dataZoom: [
-        { type: 'inside', throttle: 50 },
-        {
-          type: 'slider',
-          height: 18,
-          bottom: 8,
-          borderColor: ec.split,
-          fillerColor: 'rgba(30,136,255,0.12)',
-          handleStyle: { color: '#1e88ff' },
-          dataBackground: { lineStyle: { color: ec.axis }, areaStyle: { color: ec.split } },
-          textStyle: { color: ec.label },
-          labelFormatter: (val) => dayjs(val).format('MMM D, h A'),
-        },
-      ],
+      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 18 }],
       xAxis: {
         type: 'time',
         axisLine: { lineStyle: { color: ec.axis } },
-        axisLabel: {
-          color: ec.label,
-          formatter: (val) => dayjs(val).format('h A'),
-          hideOverlap: true,
-        },
+        axisLabel: { color: ec.label, hideOverlap: true },
       },
       yAxis: {
         type: 'value',
         min: 0,
-        // For AQI, always show at least up to 150 (Good→SG zones) so the
-        // colour bands are visible, expanding if readings go higher.
         max: isAqi ? Math.max(150, Math.ceil((maxVal + 20) / 50) * 50) : undefined,
+        name: m.unit || (isAqi ? 'AQI' : ''),
+        nameTextStyle: { color: ec.label, align: 'left' },
+        nameGap: 12,
         axisLabel: { color: ec.label },
         splitLine: { lineStyle: { color: ec.split } },
       },
@@ -394,304 +333,307 @@ const Analytics = () => {
         type: 'line',
         smooth: true,
         showSymbol: false,
-        // Show a highlighted dot at the hovered point.
         symbol: 'circle',
         symbolSize: 8,
-        emphasis: {
-          focus: 'series',
-          itemStyle: {
-            color: '#1e88ff',
-            borderColor: '#fff',
-            borderWidth: 2,
-          },
-        },
         data: points,
-        lineStyle: { width: 2.5, color: '#1e88ff' },
-        itemStyle: { color: '#1e88ff' },
-        // Keep the gradient fill only when NOT showing category bands,
-        // so the bands stay readable behind the line.
-        areaStyle: isAqi ? undefined : {
-          color: {
-            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-            colorStops: [
-              { offset: 0, color: 'rgba(30,136,255,0.35)' },
-              { offset: 1, color: 'rgba(30,136,255,0.02)' },
-            ],
-          },
-        },
-        // #1 Category bands + #3 average line + threshold line.
+        lineStyle: { width: 2.5, color: ec.line },
+        itemStyle: { color: ec.line },
         markArea: bandAreas.length ? { silent: true, data: bandAreas } : undefined,
-        markLine: markLineData.length ? {
-          silent: true,
-          symbol: 'none',
-          data: markLineData,
-        } : undefined,
-        // #2 Peak & low markers
-        markPoint: {
+        markLine: markLineData.length ? { silent: true, symbol: 'none', data: markLineData } : undefined,
+        markPoint: peakBucket ? {
           symbolSize: 46,
-          data: [
-            {
-              type: 'max',
-              name: 'Peak',
-              itemStyle: { color: '#dc2626' },
-              label: {
-                formatter: (p) => `Peak\n${Array.isArray(p.value) ? p.value[1] : p.value}`,
-                color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 12,
-              },
+          data: [{
+            name: 'Peak',
+            coord: [new Date(peakBucket.time).getTime(), peakBucket.aqi],
+            itemStyle: { color: CATEGORY_COLORS['Very Unhealthy'] || '#dc2626' },
+            label: {
+              formatter: `Peak\n${peakBucket.aqiMax}`,
+              color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 12,
             },
-            {
-              type: 'min',
-              name: 'Low',
-              itemStyle: { color: '#16a34a' },
-              label: {
-                formatter: (p) => `Low\n${Array.isArray(p.value) ? p.value[1] : p.value}`,
-                color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 12,
-              },
-            },
-          ],
-        },
+          }],
+        } : undefined,
       }],
     }
-  }, [data, metric, ec, limits])
+  }, [data, metric, ec, limits, categories])
 
-  const donutOption = useMemo(() => {
-    if (!data) return null
-    const slices = data.categories.filter(c => c.count > 0).map(c => ({
-      value: c.count, name: c.label,
-      itemStyle: { color: CATEGORY_COLORS[c.label] || '#94a3b8' },
-    }))
+  // Category mix per day. Replaces the donut, which with NowCast smoothing was a
+  // large single-colour circle: a stacked bar shows the same mix changing over
+  // time in the same space.
+  const categoryStackOption = useMemo(() => {
+    if (!data?.categoriesByDay?.length) return null
+    const days = data.categoriesByDay
     return {
+      grid: { left: 44, right: 16, top: 12, bottom: 48 },
       tooltip: {
-        trigger: 'item',
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
         backgroundColor: ec.tooltipBg,
         borderColor: ec.tooltipBorder,
         textStyle: { color: ec.text },
-        formatter: '{b}: {c} ({d}%)',
       },
-      legend: {
-        bottom: 0, left: 'center', textStyle: { color: ec.label },
-        itemWidth: 12, itemHeight: 12,
+      legend: { bottom: 0, left: 'center', textStyle: { color: ec.label }, itemWidth: 12, itemHeight: 12 },
+      xAxis: {
+        type: 'category',
+        data: days.map((d) => dayjs(d.day).format('MMM D')),
+        axisLabel: { color: ec.label },
+        axisLine: { lineStyle: { color: ec.axis } },
       },
-      series: [{
-        type: 'pie',
-        radius: ['48%', '72%'],
-        center: ['50%', '44%'],
-        avoidLabelOverlap: true,
-        itemStyle: { borderColor: ec.tooltipBg, borderWidth: 2, borderRadius: 4 },
-        label: { show: true, formatter: '{d}%', color: ec.text, fontWeight: 600 },
-        data: slices,
-      }],
+      yAxis: {
+        type: 'value',
+        max: 100,
+        name: '% of readings',
+        nameTextStyle: { color: ec.label, align: 'left' },
+        axisLabel: { color: ec.label, formatter: '{value}%' },
+        splitLine: { lineStyle: { color: ec.split } },
+      },
+      series: categories.map((c) => ({
+        name: c.name,
+        type: 'bar',
+        stack: 'mix',
+        barMaxWidth: 44,
+        itemStyle: { color: CATEGORY_COLORS[c.name] },
+        data: days.map((d) => (d.total ? Math.round(((d.counts[c.name] || 0) / d.total) * 100) : 0)),
+      })),
     }
-  }, [data, ec])
+  }, [data, ec, categories])
 
   const heatmapOption = useMemo(() => {
-    if (!data) return null
-    const grid = data.heatmap.map(h => [h.hour, h.dow - 1, h.avgAqi])
-    const maxAqi = Math.max(...data.heatmap.map(h => h.avgAqi), 60)
+    if (!data?.heatmap?.length) return null
+    const maxAqi = Math.max(...data.heatmap.map((h) => h.avgAqi), 60)
+
+    // A cell averaging four readings should not look as confident as one
+    // averaging four hundred. Opacity carries the sample count, scaled against
+    // the median rather than the maximum so one very busy cell does not wash
+    // out every other one.
+    const counts = data.heatmap.map((h) => h.count).sort((a, b) => a - b)
+    const median = counts[Math.floor(counts.length / 2)] || 1
+    const grid = data.heatmap.map((h) => ({
+      value: [h.hour, h.dow - 1, h.avgAqi, h.count],
+      itemStyle: { opacity: 0.35 + 0.65 * Math.min(1, h.count / median) },
+    }))
     return {
       tooltip: {
-        backgroundColor: ec.tooltipBg, borderColor: ec.tooltipBorder,
+        backgroundColor: ec.tooltipBg,
+        borderColor: ec.tooltipBorder,
         textStyle: { color: ec.text },
-        formatter: (p) => `${DOW_LABELS[p.value[1]]} ${hourLabel(p.value[0])}<br/>Avg AQI: <b>${p.value[2]}</b>`,
+        formatter: (p) =>
+          `${DOW_LABELS[p.value[1]]} ${hourLabel(p.value[0])}<br/>Average AQI <b>${p.value[2]}</b><br/>` +
+          `<span style="opacity:.7">${p.value[3]} reading${p.value[3] === 1 ? '' : 's'}</span>`,
       },
       grid: { left: 50, right: 16, top: 10, bottom: 60 },
       xAxis: {
         type: 'category',
         data: Array.from({ length: 24 }, (_, i) => i),
         splitArea: { show: true },
-        axisLabel: {
-          color: ec.label,
-          interval: 2,
-          formatter: (h) => hourLabel(Number(h)),
-        },
+        axisLabel: { color: ec.label, interval: 2, formatter: (h) => hourLabel(Number(h)) },
         axisLine: { lineStyle: { color: ec.axis } },
       },
       yAxis: {
-        type: 'category', data: DOW_LABELS,
+        type: 'category',
+        data: DOW_LABELS,
         splitArea: { show: true },
         axisLabel: { color: ec.label },
         axisLine: { lineStyle: { color: ec.axis } },
       },
       visualMap: {
+        // Explicitly dimension 2 (avgAqi). The default is the last dimension,
+        // which is the sample count, and would colour by the wrong thing.
+        dimension: 2,
         min: 0, max: maxAqi, calculable: true,
         orient: 'horizontal', left: 'center', bottom: 6,
         textStyle: { color: ec.label },
-        inRange: { color: ['#86efac', '#fcd34d', '#fb923c', '#f87171', '#a78bfa', '#7f1d1d'] },
+        // The standard's own colours, in order, rather than an invented ramp.
+        inRange: { color: categories.map((c) => CATEGORY_COLORS[c.name]) },
       },
       series: [{
-        name: 'AQI', type: 'heatmap', data: grid,
+        name: 'AQI',
+        type: 'heatmap',
+        data: grid,
+        // A cell backed by four readings should not look as solid as one backed
+        // by four hundred. Opacity carries the sample count.
+        itemStyle: {
+          borderRadius: 2,
+          borderColor: ec.tooltipBg,
+          borderWidth: 1,
+          opacity: 1,
+        },
         emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0,0,0,0.4)' } },
-        itemStyle: { borderRadius: 2, borderColor: ec.tooltipBg, borderWidth: 1 },
       }],
     }
-  }, [data, ec])
+  }, [data, ec, categories])
 
-  const exceedanceBarOption = useMemo(() => {
-    if (!data || !data.exceedances) return null
-    const items = data.exceedances.filter(e => e.field !== 'Aqi')
-    return {
-      grid: { left: 80, right: 30, top: 10, bottom: 24 },
-      tooltip: {
-        trigger: 'axis', axisPointer: { type: 'shadow' },
-        backgroundColor: ec.tooltipBg, borderColor: ec.tooltipBorder, textStyle: { color: ec.text },
-        formatter: (p) => `${p[0].name}<br/>${p[0].value}% of time over limit`,
-      },
-      xAxis: {
-        type: 'value', max: 100,
-        axisLabel: { color: ec.label, formatter: '{value}%' },
-        splitLine: { lineStyle: { color: ec.split } },
-      },
-      yAxis: {
-        type: 'category',
-        data: items.map(e => FIELD_LABELS[e.field] || e.field),
-        axisLabel: { color: ec.label },
-        axisLine: { lineStyle: { color: ec.axis } },
-      },
-      series: [{
-        type: 'bar',
-        data: items.map(e => ({
-          value: e.pctTime,
-          itemStyle: {
-            color: e.pctTime > 50 ? '#dc2626' : e.pctTime > 20 ? '#f59e0b' : '#16a34a',
-            borderRadius: [0, 4, 4, 0],
-          },
-        })),
-        barWidth: '55%',
-      }],
-    }
-  }, [data, ec])
+  // ---- compliance report ---------------------------------------------------
 
-  const downloadReport = async () => {
-    if (!data || !reportRef.current) return
+  const downloadReport = () => {
+    if (!data) return
     setPdfLoading(true)
-
-    const effectiveTo = liveMode ? dayjs() : to
-    const deviceLabel = deviceId === 'all'
-      ? 'All devices'
-      : (devices.find(d => d.deviceId === deviceId)?.name || deviceId)
-
     try {
-      const el = reportRef.current
-
-      // Force light background so charts are readable on white PDF
-      const prevBg = el.style.background
-      el.style.background = '#ffffff'
-
-      const canvas = await html2canvas(el, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        scrollY: -window.scrollY,
-        windowWidth: el.scrollWidth,
-        windowHeight: el.scrollHeight,
-      })
-
-      el.style.background = prevBg
-
-      const imgData = canvas.toDataURL('image/png')
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-
       const pageW = pdf.internal.pageSize.getWidth()
       const pageH = pdf.internal.pageSize.getHeight()
-      const margin = 12
-      const contentW = pageW - margin * 2
+      const M = 14
+      let y = M
 
-      // Header
-      pdf.setFontSize(18)
-      pdf.setFont('helvetica', 'bold')
-      pdf.text('BewAir — Analytics Report', margin, margin + 6)
-
-      pdf.setFontSize(9)
-      pdf.setFont('helvetica', 'normal')
-      pdf.setTextColor(100)
-      pdf.text(`Generated: ${dayjs().format('MMM D YYYY, h:mm A')}`, margin, margin + 12)
-      pdf.text(`Period: ${from.format('MMM D YYYY h:mm A')} — ${effectiveTo.format('MMM D YYYY h:mm A')}`, margin, margin + 17)
-      pdf.text(`Device: ${deviceLabel}`, margin, margin + 22)
-      pdf.setTextColor(0)
-
-      // Charts image — fit width, split across pages
-      const headerH = 30
-      const imgW = contentW
-      const imgH = (canvas.height / canvas.width) * imgW
-
-      const availableH = pageH - margin - headerH
-      let yOffset = 0
-
-      while (yOffset < imgH) {
-        const sliceH = Math.min(availableH, imgH - yOffset)
-        const srcY = (yOffset / imgH) * canvas.height
-        const srcH = (sliceH / imgH) * canvas.height
-
-        const sliceCanvas = document.createElement('canvas')
-        sliceCanvas.width = canvas.width
-        sliceCanvas.height = srcH
-        const ctx = sliceCanvas.getContext('2d')
-        ctx.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
-
-        const sliceData = sliceCanvas.toDataURL('image/png')
-        const yPos = yOffset === 0 ? margin + headerH : margin
-
-        pdf.addImage(sliceData, 'PNG', margin, yPos, imgW, sliceH)
-        yOffset += sliceH
-
-        if (yOffset < imgH) pdf.addPage()
+      const effectiveTo = liveMode ? dayjs() : to
+      const line = (text, { size = 10, style = 'normal', gap = 5, color = 40 } = {}) => {
+        if (y > pageH - M - 6) { pdf.addPage(); y = M }
+        pdf.setFontSize(size)
+        pdf.setFont('helvetica', style)
+        pdf.setTextColor(color)
+        pdf.text(String(text), M, y)
+        y += gap
+      }
+      const rule = () => {
+        if (y > pageH - M - 6) { pdf.addPage(); y = M }
+        pdf.setDrawColor(210); pdf.line(M, y, pageW - M, y); y += 5
+      }
+      const row = (cells, widths, { style = 'normal', color = 40 } = {}) => {
+        if (y > pageH - M - 6) { pdf.addPage(); y = M }
+        pdf.setFontSize(9); pdf.setFont('helvetica', style); pdf.setTextColor(color)
+        let x = M
+        cells.forEach((c, i) => { pdf.text(String(c), x, y); x += widths[i] })
+        y += 5
       }
 
-      pdf.save(`bewair-analytics-${dayjs().format('YYYY-MM-DD-HHmm')}.pdf`)
+      // --- header ---
+      line('BewAir — Indoor air quality report', { size: 17, style: 'bold', gap: 7, color: 20 })
+      line('Philippine DENR compliance summary', { size: 10, color: 110, gap: 7 })
+      rule()
+
+      // --- what this covers ---
+      line('Reporting period', { size: 11, style: 'bold', gap: 6, color: 20 })
+      line(`${from.format('D MMMM YYYY, h:mm A')} to ${effectiveTo.format('D MMMM YYYY, h:mm A')}`)
+      line(`Rooms: ${deviceLabel}`)
+      line(data.meta?.schoolHours?.active
+        ? `Filtered to school hours only (${data.meta.schoolHours.label}, ${data.meta.timezone}).`
+        : 'All hours included, including nights and weekends when rooms are empty.')
+      line(`Data coverage: ${data.coverage.pct}% of the period was observed.`)
+      if (data.coverage.low) {
+        line('Coverage is below 70%. Figures may not represent the full period.', { color: 150 })
+      }
+      if (data.legacyPct > 0) {
+        line(`${data.legacyPct}% of readings predate the DENR standard change and were computed on the previous scale.`, { color: 150 })
+      }
+      y += 3
+      rule()
+
+      // --- per room ---
+      line('By room', { size: 11, style: 'bold', gap: 6, color: 20 })
+      const w = [46, 22, 22, 26, 30]
+      row(['Room', 'Coverage', 'Avg AQI', 'Hours over', 'Main issue'], w, { style: 'bold', color: 80 })
+      for (const d of data.byDevice) {
+        const totalOver = Object.values(d.hoursOver || {}).reduce((a, b) => a + b, 0)
+        row([
+          (d.room || d.name || d.deviceId).slice(0, 24),
+          `${d.coverage}%`,
+          d.avgAqi ?? '—',
+          d.count === 0 ? '—' : fmtHours(totalOver),
+          d.count === 0 ? 'no readings' : (d.worstField ? `${FIELD_LABELS[d.worstField] || d.worstField}${d.driver ? ` (${d.driver})` : ''}` : 'within limits'),
+        ], w)
+      }
+      y += 3
+
+      // --- category mix per room ---
+      line('Time in each DENR category, by room', { size: 11, style: 'bold', gap: 6, color: 20 })
+      const cw = [40, ...categories.map(() => 24)]
+      row(['Room', ...categories.map((c) => c.name.split(' ')[0])], cw, { style: 'bold', color: 80 })
+      for (const d of data.byDevice) {
+        if (d.count === 0) continue
+        row([
+          (d.room || d.name || d.deviceId).slice(0, 20),
+          ...categories.map((c) => `${d.categoryPct?.[c.name] ?? 0}%`),
+        ], cw)
+      }
+      y += 3
+      rule()
+
+      // --- exceedances ---
+      line('Hours over limit', { size: 11, style: 'bold', gap: 6, color: 20 })
+      const ew = [40, 30, 34, 30]
+      row(['Pollutant', 'Limit', 'Hours over', '% of period'], ew, { style: 'bold', color: 80 })
+      for (const e of data.exceedances) {
+        row([
+          FIELD_LABELS[e.field] || e.field,
+          `${e.limit}${FIELD_UNITS[e.field] ? ' ' + FIELD_UNITS[e.field] : ''}`,
+          `${e.hours} of ${e.expectedHours}`,
+          `${e.pctTime}%`,
+        ], ew)
+      }
+      y += 3
+      rule()
+
+      // --- provenance ---
+      line('Standards applied', { size: 11, style: 'bold', gap: 6, color: 20 })
+      const src = airQualitySource()
+      pdf.setFontSize(9); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(90)
+      for (const l of pdf.splitTextToSize(src, pageW - M * 2)) {
+        if (y > pageH - M - 6) { pdf.addPage(); y = M }
+        pdf.text(l, M, y); y += 4.5
+      }
+      y += 3
+      for (const l of pdf.splitTextToSize(
+        'CO2 and formaldehyde are simulated by the FS00905B sensor from its VOC element rather than measured directly. Treat them as trend indicators, not instrument readings.',
+        pageW - M * 2
+      )) {
+        if (y > pageH - M - 6) { pdf.addPage(); y = M }
+        pdf.text(l, M, y); y += 4.5
+      }
+
+      // --- footers ---
+      const pages = pdf.internal.getNumberOfPages()
+      for (let i = 1; i <= pages; i++) {
+        pdf.setPage(i)
+        pdf.setFontSize(8); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(150)
+        pdf.text(`Generated ${dayjs().format('D MMM YYYY, h:mm A')}`, M, pageH - 8)
+        pdf.text(`Page ${i} of ${pages}`, pageW - M, pageH - 8, { align: 'right' })
+      }
+
+      pdf.save(`bewair-air-quality-${from.format('YYYYMMDD')}-${effectiveTo.format('YYYYMMDD')}.pdf`)
     } finally {
       setPdfLoading(false)
     }
   }
 
-  // ---- Admin gate ----
-  if (!user) {
-    return <ThemeProvider theme={muiTheme}><CssBaseline /><Box sx={{ p: 3 }}><Alert severity="warning">Please log in.</Alert></Box></ThemeProvider>
-  }
+  // ---- render --------------------------------------------------------------
+
   if (!isAdmin) {
-    return (
-      <ThemeProvider theme={muiTheme}><CssBaseline />
-        <Box sx={{ p: 3 }}>
-          <Alert severity="error">Analytics is admin-only.</Alert>
-        </Box>
-      </ThemeProvider>
-    )
+    return <Alert severity="info">Analytics is available to administrator accounts.</Alert>
   }
+
+  const hasData = data && data.kpis.count > 0
+  const noDataBecauseFilter = data && data.kpis.count === 0 && schoolHours
 
   return (
     <ThemeProvider theme={muiTheme}>
       <CssBaseline />
       <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Box sx={{ p: 0 }}>
-          {/* Header */}
+        <Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2, mb: 2 }}>
             <Typography variant="h4" sx={{ fontWeight: 800 }}>Analytics</Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<Download size={16} />}
-                onClick={downloadReport}
-                disabled={!data || pdfLoading}
-                sx={{ borderRadius: '999px', textTransform: 'none', fontWeight: 600 }}
-              >
-                {pdfLoading ? 'Generating PDF…' : 'Download PDF'}
-              </Button>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, py: 0.5, borderRadius: '999px', border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
-              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: liveMode ? '#22c55e' : '#94a3b8', boxShadow: liveMode ? '0 0 0 4px rgba(34,197,94,0.18)' : 'none' }} />
-              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-                {liveMode ? 'Live' : 'Paused'}{lastUpdated && ` · ${dayjs(lastUpdated).format('HH:mm:ss')}`}
-              </Typography>
-              <FormControlLabel sx={{ ml: 0.5, mr: -0.5 }} control={
-                <Switch size="small" checked={liveMode} onChange={(e) => { setLiveMode(e.target.checked); if (e.target.checked) setTo(dayjs()) }} />
-              } label="" />
-            </Box>
-            </Box>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<Download size={16} />}
+              onClick={downloadReport}
+              disabled={!hasData || pdfLoading}
+              sx={{ borderRadius: '999px', textTransform: 'none', fontWeight: 600 }}
+            >
+              {pdfLoading ? 'Preparing report…' : 'Download report'}
+            </Button>
           </Box>
 
-          {/* Filter bar */}
-          <Card sx={{ mb: 2 }}>
+          {/* One card carries the period, the filters, the headline figures and
+              the provenance. The reader has to know what they are looking at and
+              how much of it is real before any number means anything. */}
+          <Card sx={{ mb: 2.5 }}>
             <CardContent>
-              <Grid container spacing={2} alignItems="center">
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                {from.format('D MMM')} – {(liveMode ? dayjs() : to).format('D MMM YYYY')}
+                {' · '}{schoolHours ? (data?.meta?.schoolHours?.label || 'school hours') : 'all hours'}
+                {' · '}{deviceLabel}
+              </Typography>
+
+              <Grid container spacing={1.5} alignItems="center" sx={{ mt: 0.5, mb: hasData ? 2 : 0 }}>
                 <Grid item xs={12} md={3}>
                   <DateTimePicker label="From" value={from} onChange={(v) => { setFrom(v); setLiveMode(false) }} slotProps={{ textField: { fullWidth: true, size: 'small' } }} />
                 </Grid>
@@ -700,17 +642,17 @@ const Analytics = () => {
                 </Grid>
                 <Grid item xs={6} md={2}>
                   <FormControl fullWidth size="small">
-                    <InputLabel>Device</InputLabel>
-                    <Select label="Device" value={deviceId} onChange={e => setDeviceId(e.target.value)}>
-                      <MenuItem value="all">All devices</MenuItem>
-                      {devices.map(d => <MenuItem key={d.deviceId} value={d.deviceId}>{d.name} — {d.room}</MenuItem>)}
+                    <InputLabel>Room</InputLabel>
+                    <Select label="Room" value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
+                      <MenuItem value="all">All rooms</MenuItem>
+                      {devices.map((d) => <MenuItem key={d.deviceId} value={d.deviceId}>{d.room || d.name}</MenuItem>)}
                     </Select>
                   </FormControl>
                 </Grid>
                 <Grid item xs={6} md={2}>
                   <FormControl fullWidth size="small">
-                    <InputLabel>Granularity</InputLabel>
-                    <Select label="Granularity" value={granularity} onChange={e => setGranularity(e.target.value)}>
+                    <InputLabel>Detail</InputLabel>
+                    <Select label="Detail" value={granularity} onChange={(e) => setGranularity(e.target.value)}>
                       <MenuItem value="auto">Auto</MenuItem>
                       <MenuItem value="hour">Hourly</MenuItem>
                       <MenuItem value="day">Daily</MenuItem>
@@ -719,235 +661,273 @@ const Analytics = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={12} md={2}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Trend metric</InputLabel>
-                    <Select label="Trend metric" value={metric} onChange={e => setMetric(e.target.value)}>
-                      {METRIC_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-                    </Select>
-                  </FormControl>
+                <Grid item xs={12} md={2} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                  <FormControlLabel
+                    sx={{ m: 0 }}
+                    control={<Switch size="small" checked={schoolHours} onChange={(e) => setSchoolHours(e.target.checked)} />}
+                    label={<Typography variant="caption">School hours only</Typography>}
+                  />
+                  <Tooltip title={liveAllowed ? '' : 'Live refresh is available on ranges of 24 hours or less'}>
+                    <FormControlLabel
+                      sx={{ m: 0 }}
+                      control={<Switch size="small" checked={liveMode} disabled={!liveAllowed} onChange={(e) => { setLiveMode(e.target.checked); if (e.target.checked) setTo(dayjs()) }} />}
+                      label={<Typography variant="caption" color="text.secondary">
+                        {liveMode ? `Live · ${lastUpdated ? dayjs(lastUpdated).format('HH:mm:ss') : ''}` : 'Live off'}
+                      </Typography>}
+                    />
+                  </Tooltip>
                 </Grid>
               </Grid>
+
+              {hasData && (
+                <>
+                  <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
+                    gap: 2.5,
+                    pt: 2,
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                  }}>
+                    <SummaryFigure
+                      label="Average AQI"
+                      value={data.kpis.avg}
+                      accent={CATEGORY_COLORS[data.kpis.avgCategory]}
+                      note={data.kpis.avgCategory}
+                      sub={categoryNote(data.kpis.avgCategory)}
+                    />
+                    <SummaryFigure
+                      label="Data coverage"
+                      value={`${data.coverage.pct}%`}
+                      accent={data.coverage.low ? CATEGORY_COLORS['Very Unhealthy'] : undefined}
+                      note={`${fmtHours(data.coverage.observedMinutes / 60)} of ${fmtHours(data.coverage.expectedMinutes / 60)} hrs observed`}
+                      sub={data.coverage.low ? 'Some readings missing — results may not represent the full period.' : 'Readings cover the period.'}
+                    />
+                    <SummaryFigure
+                      label="Hours over AQI limit"
+                      value={aqiExceedance ? aqiExceedance.hours : 0}
+                      accent={(aqiExceedance?.hours ?? 0) > 0 ? CATEGORY_COLORS['Very Unhealthy'] : CATEGORY_COLORS['Good']}
+                      note={`of ${aqiExceedance?.expectedHours ?? 0} hrs in period`}
+                      sub={`Limit ${limits.Aqi ?? 100} AQI`}
+                    />
+                    <SummaryFigure
+                      label="Versus previous period"
+                      value={trendDelta == null ? '—' : `${Math.abs(trendDelta)}%`}
+                      accent={trendDelta == null ? undefined : trendDelta < 0 ? CATEGORY_COLORS['Good'] : CATEGORY_COLORS['Fair']}
+                      note={trendDelta == null ? 'no comparable period' : trendDelta < 0 ? 'better' : trendDelta > 0 ? 'worse' : 'unchanged'}
+                      sub={`Previous ${rangeHours < 48 ? `${rangeHours} hours` : `${Math.round(rangeHours / 24)} days`}`}
+                    />
+                  </Box>
+
+                  {data.legacyPct > 0 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
+                      {data.legacyPct === 100
+                        ? 'All readings in this range predate the DENR standard change and were computed on the previous scale.'
+                        : `${data.legacyPct}% of readings predate the DENR standard change; the range mixes two scales.`}
+                    </Typography>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
 
-          {loading && <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>}
+          {loading && <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>}
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-          {data && !loading && (
-            <div ref={reportRef}>
-              {/* KPI cards — dashboard-style grid, auto-fit, larger tiles */}
-              <div className="dash-kpis analytics-kpis">
-                <AnalyticsKpi
-                  icon={<Activity size={22} />}
-                  label="Average AQI"
-                  value={data.kpis.avg}
-                  hint={`${data.kpis.avgCategory}`}
-                  sub={HEALTH_NOTE[data.kpis.avgCategory] || ''}
-                  accent={CATEGORY_COLORS[data.kpis.avgCategory]}
-                />
-                <AnalyticsKpi
-                  icon={<TrendingUp size={22} />}
-                  label="Highest AQI"
-                  value={data.kpis.max}
-                  hint="Worst single reading"
-                  sub="The peak AQI recorded in this range"
-                  accent="#dc2626"
-                />
-                <AnalyticsKpi
-                  icon={<Clock size={22} />}
-                  label="Hours Over Limit"
-                  value={kpiExtras.excHours}
-                  hint={kpiExtras.excHours > 0 ? 'Air was unsafe' : 'Air stayed safe'}
-                  sub={
-                    kpiExtras.excHours > 0
-                      ? `AQI was above the safe limit for ${kpiExtras.excHours} hour${kpiExtras.excHours === 1 ? '' : 's'}`
-                      : 'AQI never crossed the safe limit'
-                  }
-                  accent={kpiExtras.excHours > 0 ? '#dc2626' : '#16a34a'}
-                />
-                <AnalyticsKpi
-                  icon={
-                    kpiExtras.trendDelta == null ? <Minus size={22} />
-                    : kpiExtras.trendDelta < 0 ? <TrendingDown size={22} />
-                    : kpiExtras.trendDelta > 0 ? <TrendingUp size={22} />
-                    : <Minus size={22} />
-                  }
-                  label="Trend"
-                  value={
-                    kpiExtras.trendDelta == null ? '—'
-                    : `${Math.abs(kpiExtras.trendDelta)}%`
-                  }
-                  hint={
-                    kpiExtras.trendDelta == null ? 'No prior data'
-                    : kpiExtras.trendDelta < 0 ? 'Improving'
-                    : kpiExtras.trendDelta > 0 ? 'Worsening'
-                    : 'No change'
-                  }
-                  sub={
-                    kpiExtras.trendDelta == null ? 'Not enough history to compare'
-                    : kpiExtras.trendDelta < 0 ? 'Air is better than the previous period'
-                    : kpiExtras.trendDelta > 0 ? 'Air is worse than the previous period'
-                    : 'Same as the previous period'
-                  }
-                  accent={
-                    kpiExtras.trendDelta == null ? '#94a3b8'
-                    : kpiExtras.trendDelta < 0 ? '#16a34a'
-                    : kpiExtras.trendDelta > 0 ? '#dc2626'
-                    : '#94a3b8'
-                  }
-                />
-              </div>
+          {!loading && !error && data && !hasData && (
+            <Card><CardContent sx={{ py: 5, textAlign: 'center' }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>No readings in this range</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {noDataBecauseFilter
+                  ? `Nothing was recorded during ${data.meta?.schoolHours?.label || 'school hours'} between these dates.`
+                  : 'No device reported between these dates.'}
+              </Typography>
+              {noDataBecauseFilter && (
+                <Button variant="outlined" size="small" sx={{ textTransform: 'none' }} onClick={() => setSchoolHours(false)}>
+                  Show all hours
+                </Button>
+              )}
+            </CardContent></Card>
+          )}
 
-              {/* Trend (feature 2) */}
-              <Card sx={{ mb: 2 }}>
+          {hasData && !loading && (
+            <>
+              {/* Rooms first: the page exists to answer which room needs doing something about. */}
+              <Card sx={{ mb: 2.5 }}>
                 <CardContent>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>
-                    {(METRIC_OPTIONS.find(o => o.value === metric) || {}).label} Over Time
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Rooms needing attention</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Ranked by hours spent over a limit, using the same rule as live alerts.
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                    {metric === 'aqi'
-                      ? 'Line shows the peak AQI per interval. Background colors are health zones (green = good → red = unhealthy); gray line = period average; peak/low points marked. Scroll or drag the slider to zoom.'
-                      : 'Red dashed line = safety limit, gray line = period average, peak/low points marked. Scroll or drag the slider to zoom.'}
-                  </Typography>
-                  {data.buckets.length === 0
-                    ? <Typography color="text.secondary">No data in this range.</Typography>
-                    : <ReactECharts option={trendOption} style={{ height: 480 }} notMerge />}
+
+                  {data.rooms.needsAttention.length === 0 ? (
+                    <Typography variant="body2" sx={{ fontWeight: 600, color: CATEGORY_COLORS['Good'] }}>
+                      Every reporting room stayed within its limits for the whole period.
+                    </Typography>
+                  ) : (
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                      {data.rooms.needsAttention.map((r) => <RoomRow key={r.deviceId} room={r} />)}
+                    </Box>
+                  )}
+
+                  {(data.rooms.okCount > 0 || data.rooms.noDataCount > 0) && (
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                      {data.rooms.okCount > 0 && `${data.rooms.okRooms.join(', ')} stayed within every limit.`}
+                      {data.rooms.noDataCount > 0 && ` ${data.rooms.noDataRooms.join(', ')} reported nothing at all in this range.`}
+                    </Typography>
+                  )}
                 </CardContent>
               </Card>
 
-              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-                {/* AQI distribution (feature 6) */}
-                <Box sx={{ flex: '1 1 320px', minWidth: 0 }}>
-                  <Card sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Typography variant="h6" sx={{ fontWeight: 700 }}>AQI Category Distribution</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                        How often the air fell into each health category.
-                      </Typography>
-                      {data.categories.every(c => c.count === 0)
-                        ? <Typography color="text.secondary">No data in this range.</Typography>
-                        : <ReactECharts option={donutOption} style={{ height: 320 }} notMerge />}
-                    </CardContent>
-                  </Card>
-                </Box>
-
-                {/* Comparative analysis (feature 5) */}
-                <Box sx={{ flex: '1 1 320px', minWidth: 0 }}>
-                  <Card sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>Comparative Analysis</Typography>
-                      {data.comparison ? (
-                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                          <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
-                            <CompareBlock
-                              title="This period vs. previous"
-                              current={data.comparison.current.avgAqi}
-                              previous={data.comparison.previous.avgAqi}
-                            />
-                          </Box>
-                          <Box sx={{ flex: '1 1 200px', minWidth: 0 }}>
-                            <CompareBlock
-                              title="Weekday vs. weekend"
-                              current={data.comparison.weekday.avgAqi}
-                              previous={data.comparison.weekend.avgAqi}
-                              currentLabel="Weekday"
-                              previousLabel="Weekend"
-                            />
-                          </Box>
-                        </Box>
-                      ) : <Typography color="text.secondary">Not enough data.</Typography>}
-                    </CardContent>
-                  </Card>
-                </Box>
-              </Box>
-
-              {/* Per-pollutant statistics (feature 1) */}
-              <Card sx={{ mb: 2 }}>
+              <Card sx={{ mb: 2.5 }}>
                 <CardContent>
-                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Pollutant Statistics</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                    Status shows whether each pollutant's average is within its safety limit. Stability reflects how much readings fluctuated.
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 1 }}>
+                    <Box>
+                      <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                        {(METRIC_OPTIONS.find((o) => o.value === metric) || METRIC_OPTIONS[0]).label} over time
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        Interval averages{schoolHours ? ', school hours only' : ''}. Background bands are DENR categories; the dashed line is the alert limit.
+                      </Typography>
+                      {worstBucket && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                          Worst interval: {dayjs(worstBucket.time).format('ddd D MMM, h A')} — average AQI {worstBucket.aqi}, peak {worstBucket.aqiMax}.
+                        </Typography>
+                      )}
+                    </Box>
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <InputLabel>Metric</InputLabel>
+                      <Select label="Metric" value={metric} onChange={(e) => setMetric(e.target.value)}>
+                        {METRIC_OPTIONS.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+                      </Select>
+                    </FormControl>
+                  </Box>
+                  {trendOption && <ReactECharts option={trendOption} style={{ height: 340, marginTop: 8 }} notMerge />}
+                </CardContent>
+              </Card>
+
+              <Grid container spacing={2.5} sx={{ mb: 2.5 }}>
+                <Grid item xs={12} md={6}>
+                  <Card sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Hours over limit</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        Counted against the {data.exceedances[0]?.expectedHours ?? 0} hours in the period, not only the hours with data.
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {data.exceedances.map((e) => <ExceedanceRow key={e.field} item={e} />)}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <Card sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Comparisons</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Average AQI against other periods.</Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <CompareBlock
+                          title="This period vs previous"
+                          current={data.comparison.current.avgAqi}
+                          previous={data.comparison.previous.avgAqi}
+                          currentLabel="Current" previousLabel="Previous"
+                        />
+                        {data.comparison.weekendExcluded ? (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Weekday vs weekend</Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              Weekends fall outside school hours, so there is nothing to compare.{' '}
+                              <Box component="span" sx={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setSchoolHours(false)}>
+                                Compare all hours
+                              </Box>
+                            </Typography>
+                          </Box>
+                        ) : (
+                          <CompareBlock
+                            title="Weekday vs weekend"
+                            current={data.comparison.weekday.avgAqi}
+                            previous={data.comparison.weekend.avgAqi}
+                            currentLabel="Weekday" previousLabel="Weekend"
+                          />
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              </Grid>
+
+              {categoryStackOption && (
+                <Card sx={{ mb: 2.5 }}>
+                  <CardContent>
+                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Category mix by day</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                      Share of readings in each DENR category, per day.
+                    </Typography>
+                    <ReactECharts option={categoryStackOption} style={{ height: 260 }} notMerge />
+                  </CardContent>
+                </Card>
+              )}
+
+              <Card sx={{ mb: 2.5 }}>
+                <CardContent>
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Hour and weekday pattern</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Average AQI by local hour ({data.meta?.timezone}) across the selected range.
+                  </Typography>
+                  {data.heatmapDays < 3 ? (
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>
+                      A recurring pattern needs at least three days. This range covers {data.heatmapDays === 1 ? 'one day' : `${data.heatmapDays} days`}.
+                    </Typography>
+                  ) : heatmapOption ? (
+                    <ReactECharts option={heatmapOption} style={{ height: 300 }} notMerge />
+                  ) : null}
+                </CardContent>
+              </Card>
+
+              <Card sx={{ mb: 2.5 }}>
+                <CardContent>
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 0.5 }}>Pollutant detail</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Typical range is the 5th to 95th percentile — the extremes are single samples and often sensor glitches.
                   </Typography>
                   <PollutantStatsTable stats={data.pollutantStats} limits={limits} />
                 </CardContent>
               </Card>
 
-              {/* Exceedance reporting (feature 4) */}
-              <Card sx={{ mb: 2 }}>
-                <CardContent>
-                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Threshold Exceedances</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                    Hours each pollutant's average crossed its safety limit.
-                  </Typography>
-                  <Grid container spacing={2} alignItems="center">
-                    <Grid item xs={12} md={6}>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {(data.exceedances || []).filter(e => e.field !== 'Aqi').map(e => (
-                          <ExceedanceRow key={e.field} item={e} />
-                        ))}
-                      </Box>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      {data.exceedances && data.exceedances.length > 0
-                        ? <ReactECharts option={exceedanceBarOption} style={{ height: 220 }} notMerge />
-                        : <Typography color="text.secondary">No data.</Typography>}
-                    </Grid>
-                  </Grid>
-                </CardContent>
-              </Card>
-
-              {/* Pattern heatmap (feature 3) */}
-              <Card sx={{ mb: 2 }}>
-                <CardContent>
-                  <Typography variant="h6" sx={{ fontWeight: 700 }}>Hour × Day Pattern (last 7 days)</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-                    Average AQI by hour of day and day of week — reveals recurring patterns.
-                  </Typography>
-                  {data.heatmap.length === 0
-                    ? <Typography color="text.secondary">No data in the last 7 days.</Typography>
-                    : <ReactECharts option={heatmapOption} style={{ height: 320 }} notMerge />}
-                </CardContent>
-              </Card>
-
-              {/* Recent readings */}
               <Card>
                 <CardContent>
-                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Recent Readings (last 100)</Typography>
-                  <DataGrid
-                    rows={data.recent.map(r => ({ ...r, id: r._id }))}
-                    columns={[
-                      { field: 'createdAt', headerName: 'Time', flex: 1.3, valueFormatter: v => v ? dayjs(v).format('MMM D, h:mm:ss A') : '' },
-                      { field: 'deviceId', headerName: 'Device ID', flex: 1 },
-                      { field: 'Aqi', headerName: 'AQI', flex: 0.5 },
-                      { field: 'category', headerName: 'Category', flex: 1, renderCell: (p) => (
-                        <Chip label={p.value} size="small" sx={{ bgcolor: CATEGORY_COLORS[p.value] || '#94a3b8', color: 'white', fontWeight: 600 }} />
-                      )},
-                      { field: 'PM25', headerName: 'PM2.5', flex: 0.6 },
-                      { field: 'PM10', headerName: 'PM10', flex: 0.6 },
-                      { field: 'CO2', headerName: 'CO₂', flex: 0.6 },
-                      { field: 'Temperature', headerName: 'Temp', flex: 0.6 },
-                      { field: 'Humidity', headerName: 'Humidity', flex: 0.6 },
-                    ]}
-                    initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-                    pageSizeOptions={[10, 25, 50]}
-                    disableRowSelectionOnClick autoHeight density="compact"
-                  />
+                  <Typography variant="h6" sx={{ fontWeight: 700, mb: 1 }}>Recent readings</Typography>
+                  <div style={{ width: '100%' }}>
+                    <DataGrid
+                      autoHeight
+                      density="compact"
+                      rows={data.recent.map((r, i) => ({ id: i, ...r }))}
+                      columns={[
+                        { field: 'createdAt', headerName: 'Time', width: 170, valueFormatter: (v) => dayjs(v).format('MMM D, h:mm:ss A') },
+                        { field: 'room', headerName: 'Room', width: 130, valueGetter: (v, row) => devices.find((d) => d.deviceId === row.deviceId)?.room || row.deviceId },
+                        { field: 'Aqi', headerName: 'AQI', width: 80 },
+                        {
+                          field: 'category', headerName: 'Category', width: 190,
+                          renderCell: (p) => (
+                            <Chip size="small" label={p.value}
+                              sx={{ bgcolor: CATEGORY_COLORS[p.value], color: '#fff', fontWeight: 600 }} />
+                          ),
+                        },
+                        { field: 'PM25', headerName: 'PM2.5', width: 90 },
+                        { field: 'PM10', headerName: 'PM10', width: 90 },
+                        { field: 'CO2', headerName: 'CO₂', width: 90 },
+                        { field: 'Temperature', headerName: 'Temp', width: 90 },
+                        { field: 'Humidity', headerName: 'Humidity', width: 100 },
+                      ]}
+                      initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
+                      pageSizeOptions={[10, 25, 50]}
+                      disableRowSelectionOnClick
+                    />
+                  </div>
                 </CardContent>
               </Card>
-
-              {/* Insights panel (feature #1) — moved to bottom */}
-              {insights.length > 0 && (
-                <Card sx={{ mt: 2 }}>
-                  <CardContent>
-                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1.5 }}>Key Insights</Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      {insights.map((ins, i) => <InsightRow key={i} insight={ins} />)}
-                    </Box>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+            </>
           )}
         </Box>
       </LocalizationProvider>
@@ -955,149 +935,141 @@ const Analytics = () => {
   )
 }
 
-// ============== Sub-components ==============
-// Dashboard-style KPI tile (uses the global .dash-kpi classes for consistency).
-const AnalyticsKpi = ({ icon, label, value, hint, sub, accent }) => (
-  <div className="dash-kpi analytics-kpi" style={{ borderTopColor: accent }}>
-    <div className="dash-kpi-icon" style={{ color: accent }}>{icon}</div>
-    <div className="dash-kpi-label">{label}</div>
-    <div className="dash-kpi-value" style={{ color: accent }}>{value}</div>
-    {hint && <div className="analytics-kpi-hint" style={{ color: accent }}>{hint}</div>}
-    {sub && <div className="dash-kpi-sub">{sub}</div>}
-  </div>
+// ---------------------------------------------------------------------------
+
+// A headline figure. No icon: an icon here labels nothing the text does not.
+const SummaryFigure = ({ label, value, note, sub, accent }) => (
+  <Box>
+    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>{label}</Typography>
+    <Typography sx={{ fontSize: 30, fontWeight: 800, lineHeight: 1.15, color: accent || 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+      {value}
+    </Typography>
+    {note && <Typography variant="body2" sx={{ fontWeight: 600, color: accent || 'text.secondary' }}>{note}</Typography>}
+    {sub && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, lineHeight: 1.4 }}>{sub}</Typography>}
+  </Box>
 )
 
-const InsightRow = ({ insight }) => {
-  // Use the app's soft/strong color tokens (already dark-mode-aware) instead
-  // of hardcoded light-mode-only hex — this panel previously went dark-text-
-  // on-dark-background in dark mode, same bug already fixed elsewhere.
-  const tone = {
-    good:    { bg: 'var(--color-success-soft)', fg: 'var(--color-success-strong)', icon: '✓' },
-    warning: { bg: 'var(--color-warning-soft)', fg: 'var(--color-warning-strong)', icon: '!' },
-    bad:     { bg: 'var(--color-danger-soft)',  fg: 'var(--color-danger-strong)',  icon: '▲' },
-    neutral: { bg: 'var(--brand-blue-soft)',    fg: 'var(--brand-blue)',           icon: 'i' },
-  }[insight.tone] || { bg: 'var(--color-surface-3)', fg: 'var(--color-text-secondary)', icon: '•' }
+const RoomRow = ({ room }) => {
+  const accent = CATEGORY_COLORS['Very Unhealthy']
+  const others = Object.entries(room.hoursOver || {}).filter(([f]) => f !== room.worstField)
   return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
-      <Box sx={{
-        width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-        bgcolor: tone.bg, color: tone.fg, fontWeight: 800, fontSize: 12,
-        display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 0.2,
-      }}>{tone.icon}</Box>
-      <Typography variant="body2" sx={{ color: 'text.primary', lineHeight: 1.5 }}>
-        {insight.text}
+    <Box sx={{
+      display: 'flex', alignItems: 'baseline', gap: 1.5, flexWrap: 'wrap',
+      py: 1.25, borderBottom: '1px solid', borderColor: 'divider',
+      '&:last-of-type': { borderBottom: 0 },
+    }}>
+      <Typography sx={{ fontWeight: 700, minWidth: 120 }}>{room.room || room.name}</Typography>
+      <Typography variant="body2" sx={{ color: accent, fontWeight: 600 }}>
+        {FIELD_LABELS[room.worstField] || room.worstField}
+        {room.driver ? ` (${FIELD_LABELS[room.driver] || room.driver})` : ''}
+        {' · '}{fmtHours(room.worstHours)} hr{room.worstHours === 1 ? '' : 's'} over limit
+      </Typography>
+      {others.length > 0 && (
+        <Typography variant="caption" color="text.secondary">
+          also {others.map(([f, h]) => `${FIELD_LABELS[f] || f} ${fmtHours(h)}h`).join(', ')}
+        </Typography>
+      )}
+      <Box sx={{ flex: 1 }} />
+      <Typography variant="caption" color="text.secondary">
+        average AQI {room.avgAqi ?? '—'} · coverage {room.coverage}%
       </Typography>
     </Box>
   )
 }
 
-// Map a variability word to a pill style.
-const STABILITY_CLASS = {
-  'Very stable': 'stats-pill-stable',
-  'Stable': 'stats-pill-stable',
-  'Moderate': 'stats-pill-moderate',
-  'Highly variable': 'stats-pill-variable',
-}
-
 const PollutantStatsTable = ({ stats, limits }) => (
-  <Box sx={{ overflowX: 'auto' }}>
-    <table className="stats-table">
-      <thead>
-        <tr>
-          <th>Pollutant</th><th>Status</th><th>Average</th><th>Min</th><th>Max</th><th>Stability</th>
-        </tr>
-      </thead>
-      <tbody>
-        {POLLUTANTS.map(p => {
-          const s = stats?.[p.key]
-          if (!s) return null
-          const u = p.unit ? ` ${p.unit}` : ''
-          const limit = limits?.[p.key]
-
-          // Status pill
-          let statusClass = 'stats-pill-na'
-          let statusText = 'No limit'
-          let dotColor = '#94a3b8'
-          if (limit != null && s.avg != null) {
-            const over = s.avg > limit
-            statusClass = over ? 'stats-pill-over' : 'stats-pill-ok'
-            statusText = over ? 'Over limit' : 'Within limit'
-            dotColor = over ? '#dc2626' : '#16a34a'
-          }
-
-          // Stability pill
-          const stab = variabilityWord(s.avg, s.std)
-          const stabClass = STABILITY_CLASS[stab] || 'stats-pill-na'
-
-          return (
-            <tr key={p.key}>
-              <td className="stats-name">{p.label}</td>
-              <td>
-                <span className={`stats-pill ${statusClass}`}>
-                  <span className="stats-pill-dot" style={{ background: dotColor }} />
-                  {statusText}
-                </span>
-              </td>
-              <td><strong style={{ color: 'var(--color-text-primary)' }}>{s.avg ?? '—'}</strong>{s.avg != null ? u : ''}</td>
-              <td>{s.min ?? '—'}{s.min != null ? u : ''}</td>
-              <td>{s.max ?? '—'}{s.max != null ? u : ''}</td>
-              <td><span className={`stats-pill ${stabClass}`}>{stab}</span></td>
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
-  </Box>
+  <Table size="small">
+    <TableHead>
+      <TableRow>
+        <TableCell sx={{ fontWeight: 700 }}>Pollutant</TableCell>
+        <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+        <TableCell align="right" sx={{ fontWeight: 700 }}>Average</TableCell>
+        <TableCell align="right" sx={{ fontWeight: 700 }}>Typical range (p5–p95)</TableCell>
+        <TableCell align="right" sx={{ fontWeight: 700 }}>Hours over limit</TableCell>
+      </TableRow>
+    </TableHead>
+    <TableBody>
+      {POLLUTANTS.map((p) => {
+        const s = stats?.[p.key]
+        if (!s) return null
+        // Temperature and Humidity are two-sided, so their limits live under
+        // <Field>Min/<Field>Max. Looking up limits['Temperature'] is why these
+        // rows used to read "No limit".
+        const twoSided = p.key === 'Temperature' || p.key === 'Humidity'
+        const lo = twoSided ? limits[`${p.key}Min`] : null
+        const hi = twoSided ? limits[`${p.key}Max`] : limits[p.key]
+        const within = s.avg == null ? null
+          : twoSided ? (lo == null || s.avg >= lo) && (hi == null || s.avg <= hi)
+            : hi == null ? null : s.avg <= hi
+        const u = p.unit ? ` ${p.unit}` : ''
+        return (
+          <TableRow key={p.key} hover>
+            <TableCell sx={{ fontWeight: 700 }}>{p.label}</TableCell>
+            <TableCell>
+              {within == null ? (
+                <Chip size="small" label="No limit" variant="outlined" />
+              ) : (
+                <Chip size="small" label={within ? 'Within limit' : 'Over limit'}
+                  sx={{ bgcolor: within ? CATEGORY_COLORS['Good'] : CATEGORY_COLORS['Very Unhealthy'], color: '#fff', fontWeight: 600 }} />
+              )}
+            </TableCell>
+            <TableCell align="right" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{s.avg ?? '—'}{u}</TableCell>
+            <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              {s.p05 == null || s.p95 == null ? '—' : `${s.p05} – ${s.p95}${u}`}
+            </TableCell>
+            <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+              {s.hoursOver == null ? '—' : s.hoursOver}
+            </TableCell>
+          </TableRow>
+        )
+      })}
+    </TableBody>
+  </Table>
 )
 
-const CompareBlock = ({ title, current, previous, currentLabel = 'Current', previousLabel = 'Previous' }) => {
-  const cur = current ?? 0
-  const prev = previous ?? 0
-  const delta = prev > 0 ? Math.round(((cur - prev) / prev) * 100) : 0
-  const worse = cur > prev
+const CompareBlock = ({ title, current, previous, currentLabel, previousLabel }) => {
+  const delta = previous > 0 ? Math.round(((current - previous) / previous) * 100) : null
   return (
-    <Box sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2, height: '100%' }}>
-      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>{title.toUpperCase()}</Typography>
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 2, mt: 1 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>{cur}</Typography>
-          <Typography variant="caption" color="text.secondary">{currentLabel}</Typography>
-        </Box>
-        <Typography variant="h6" color="text.secondary">vs</Typography>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, color: 'text.secondary' }}>{prev}</Typography>
-          <Typography variant="caption" color="text.secondary">{previousLabel}</Typography>
-        </Box>
+    <Box>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>{title}</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1.5 }}>
+        <Typography sx={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{current ?? '—'}</Typography>
+        <Typography variant="body2" color="text.secondary">{currentLabel}</Typography>
+        <Typography variant="body2" color="text.secondary">vs</Typography>
+        <Typography sx={{ fontSize: 20, fontWeight: 700, color: 'text.secondary', fontVariantNumeric: 'tabular-nums' }}>{previous ?? '—'}</Typography>
+        <Typography variant="body2" color="text.secondary">{previousLabel}</Typography>
       </Box>
-      {prev > 0 && (
-        <Chip
-          size="small"
-          label={`${worse ? '▲' : '▼'} ${Math.abs(delta)}% ${worse ? 'higher' : 'lower'}`}
-          sx={{
-            mt: 1.5,
-            bgcolor: worse ? 'var(--color-danger-soft)' : 'var(--color-success-soft)',
-            color: worse ? 'var(--color-danger-strong)' : 'var(--color-success-strong)',
-            fontWeight: 600,
-          }}
-        />
+      {delta != null && delta !== 0 && (
+        <Typography variant="caption" sx={{ fontWeight: 700, color: delta < 0 ? CATEGORY_COLORS['Good'] : CATEGORY_COLORS['Fair'] }}>
+          {delta < 0 ? 'lower' : 'higher'} by {Math.abs(delta)}%
+        </Typography>
       )}
     </Box>
   )
 }
 
-const ExceedanceRow = ({ item }) => (
-  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
-    <Box>
-      <Typography variant="body2" sx={{ fontWeight: 700 }}>{FIELD_LABELS[item.field] || item.field}</Typography>
-      <Typography variant="caption" color="text.secondary">limit {item.limit}</Typography>
+const ExceedanceRow = ({ item }) => {
+  const over = item.hours > 0
+  return (
+    <Box sx={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      gap: 2, py: 1, borderBottom: '1px solid', borderColor: 'divider',
+      '&:last-of-type': { borderBottom: 0 },
+    }}>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography variant="body2" sx={{ fontWeight: 700 }}>{FIELD_LABELS[item.field] || item.field}</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+          limit {item.limit}{FIELD_UNITS[item.field] ? ` ${FIELD_UNITS[item.field]}` : ''}
+        </Typography>
+      </Box>
+      <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+        <Typography variant="body2" sx={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: over ? CATEGORY_COLORS['Very Unhealthy'] : CATEGORY_COLORS['Good'] }}>
+          {item.hours} of {item.expectedHours} hrs
+        </Typography>
+        <Typography variant="caption" color="text.secondary">{item.pctTime}% of the period</Typography>
+      </Box>
     </Box>
-    <Box sx={{ textAlign: 'right' }}>
-      <Typography variant="body2" sx={{ fontWeight: 700, color: item.hours > 0 ? '#dc2626' : '#16a34a' }}>
-        {item.hours} / {item.totalHours} hrs
-      </Typography>
-      <Typography variant="caption" color="text.secondary">{item.pctTime}% of the time</Typography>
-    </Box>
-  </Box>
-)
+  )
+}
 
 export default Analytics

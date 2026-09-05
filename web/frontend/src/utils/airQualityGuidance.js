@@ -68,6 +68,20 @@ export function airQualitySource() {
   return BANDS.source
 }
 
+/**
+ * The served AQI categories, with their bounds, colours and advice.
+ * Analytics needs the bounds for chart bands and the advice for the health
+ * note, both of which it used to hardcode against the old EPA names.
+ */
+export function airQualityCategories() {
+  return BANDS.categories
+}
+
+/** The advice line for a category NAME, or '' when it is unknown. */
+export function categoryNote(name) {
+  return BANDS.categories.find((c) => c.name === name)?.actions?.[0] || ''
+}
+
 /** The served field definitions, in display order. */
 export function airQualityFields() {
   return BANDS.fields
