@@ -3,6 +3,7 @@ import {
   Box, Card, CardContent, Typography, Grid, FormControl, InputLabel, Select,
   MenuItem, Switch, FormControlLabel, CircularProgress, Alert, Button, Chip,
   Table, TableBody, TableCell, TableHead, TableRow, CssBaseline, Tooltip,
+  ToggleButtonGroup, ToggleButton,
 } from '@mui/material'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
@@ -65,6 +66,28 @@ const METRIC_TO_FIELD = {
   aqi: 'Aqi', pm25: 'PM25', pm10: 'PM10', co2: 'CO2', tvoc: 'TVOC', hcho: 'Formaldehyde',
 }
 
+// Per-bucket "driver" for the trend table: whichever field is furthest over
+// its own limit, mirroring the worstField/driver concept RoomRow already
+// uses at the device level — computed client-side, no new backend data.
+const BUCKET_DRIVER_FIELDS = [
+  { key: 'pm25', field: 'PM25', label: 'PM 2.5' },
+  { key: 'pm10', field: 'PM10', label: 'PM 10' },
+  { key: 'co2', field: 'CO2', label: 'CO₂' },
+  { key: 'tvoc', field: 'TVOC', label: 'TVOC' },
+  { key: 'hcho', field: 'Formaldehyde', label: 'HCHO' },
+]
+const bucketDriver = (bucket, limits) => {
+  let best = null
+  for (const f of BUCKET_DRIVER_FIELDS) {
+    const val = bucket[f.key]
+    const limit = limits[f.field]
+    if (val == null || !limit) continue
+    const ratio = val / limit
+    if (!best || ratio > best.ratio) best = { ratio, label: f.label }
+  }
+  return best && best.ratio > 1 ? best.label : '—'
+}
+
 // Format an hour (0-23) as "6 AM" / "12 PM".
 const hourLabel = (h) => {
   const period = h < 12 ? 'AM' : 'PM'
@@ -82,6 +105,21 @@ const hexToRgba = (hex, alpha) => {
 }
 
 const fmtHours = (h) => (h == null ? '—' : h < 10 ? String(Math.round(h * 10) / 10) : String(Math.round(h)))
+
+// Local hour + Mongo-style day-of-week (Sun=1..Sat=7, matching $dayOfWeek and
+// SCHOOL_HOURS.days) for an arbitrary IANA zone, without a dayjs-timezone
+// dependency. Used to mirror the backend's own schoolHoursStages() $match
+// entirely client-side, so a gap can be classified as "excluded by the
+// school-hours filter" vs "genuinely missing" from timestamps alone.
+const DOW_FROM_ABBR = { Sun: 1, Mon: 2, Tue: 3, Wed: 4, Thu: 5, Fri: 6, Sat: 7 }
+const tzHourAndDow = (date, timeZone) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', hour: 'numeric', weekday: 'short',
+  }).formatToParts(date)
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? date.getHours())
+  const dow = DOW_FROM_ABBR[parts.find((p) => p.type === 'weekday')?.value] ?? null
+  return { hour, dow }
+}
 
 // Read the app's own CSS tokens so MUI and the rest of the dashboard share one
 // palette. The previous version hardcoded its own near-blacks, which is how a
@@ -127,6 +165,7 @@ const Analytics = () => {
   const [to, setTo] = useState(dayjs())
   const [deviceId, setDeviceId] = useState('all')
   const [metric, setMetric] = useState('aqi')
+  const [trendView, setTrendView] = useState('chart')
   const [granularity, setGranularity] = useState('auto')
   const [schoolHours, setSchoolHours] = useState(true)
 
@@ -244,59 +283,149 @@ const Analytics = () => {
 
   // ---- charts --------------------------------------------------------------
 
-  const trendOption = useMemo(() => {
+  // ---- Reconstruct every expected time slot, so a real gap (or a stretch
+  // excluded by the school-hours filter) can be told apart from a reading,
+  // instead of the line drawing straight through either. A slot with no
+  // matching bucket is simply absent from data.buckets today (see
+  // aqiController.js), never emitted with aqi:null — so "missing" has to be
+  // detected by comparing consecutive timestamps against the expected grid.
+  // Shared by the chart and its table-view twin, so the two never disagree.
+  const trendSlots = useMemo(() => {
     if (!data) return null
+    const isAqi = metric === 'aqi'
+    const byTime = new Map(data.buckets.map((b) => [new Date(b.time).getTime(), b]))
+    const fromMs = new Date(data.meta.from).getTime()
+    const toMs = new Date(data.meta.to).getTime()
+    const bucketMs = data.meta.bucketMs
+    // Sub-day buckets sit on a fixed epoch-modulo grid (matches
+    // aqiController.js's own bucketId formula exactly). Day/week/month are
+    // real calendar boundaries, stepped with dayjs — approximate if the
+    // browser's local zone differs from the app's, which is acceptable since
+    // this tier only gets the coarse "gap" treatment below, not the fine
+    // excluded-vs-missing one.
+    const calendarUnit = { day: 'day', week: 'week', month: 'month' }[granularity]
+    const slotTimes = []
+    if (calendarUnit) {
+      let t = dayjs(fromMs).startOf(calendarUnit)
+      const end = dayjs(toMs)
+      while (t.isBefore(end)) {
+        slotTimes.push(t.valueOf())
+        t = t.add(1, calendarUnit)
+      }
+    } else {
+      let t = Math.floor(fromMs / bucketMs) * bucketMs
+      while (t < toMs) {
+        slotTimes.push(t)
+        t += bucketMs
+      }
+    }
+
+    // The excluded-vs-missing distinction only makes sense when one slot
+    // falls entirely inside or outside school hours — true of the 5/15/60
+    // minute buckets 'auto'/'hour' can produce (all divide an hour evenly),
+    // not of 'auto's own 6-hour buckets or explicit day/week/month, where a
+    // slot routinely straddles the boundary.
+    const canClassifyExcluded = !calendarUnit && bucketMs <= 3600 * 1000
+    const sh = data.meta?.schoolHours
+    const isExcludedSlot = (ms) => {
+      if (!canClassifyExcluded || !sh?.active) return false
+      const { hour, dow } = tzHourAndDow(new Date(ms), data.meta.timezone)
+      return !(sh.days.includes(dow) && hour >= sh.startHour && hour < sh.endHour)
+    }
+
+    const slots = slotTimes.map((t) => {
+      const b = byTime.get(t)
+      if (b) {
+        const val = isAqi ? b.aqi : b[metric]
+        const instant = b.count > 0 && (b.instantCount || 0) > b.count / 2
+        return { time: t, value: val, state: 'data', instant, bucket: b }
+      }
+      return { time: t, value: null, state: isExcludedSlot(t) ? 'excluded' : 'missing', instant: false, bucket: null }
+    })
+
+    return { slots, fromMs, toMs, canClassifyExcluded, schoolHoursActive: !!sh?.active }
+  }, [data, metric, granularity])
+
+  const trendOption = useMemo(() => {
+    if (!data || !trendSlots) return null
     const m = METRIC_OPTIONS.find((o) => o.value === metric) || METRIC_OPTIONS[0]
     const isAqi = metric === 'aqi'
-
-    // Plot bucket AVERAGES. The previous version plotted per-bucket maxima and
-    // then marked the maximum of those as the peak — a max of maxes, which
-    // overstates. The true period peak is marked separately below.
-    const points = data.buckets.map((b) => [new Date(b.time).getTime(), isAqi ? b.aqi : b[metric]])
-    const vals = points.map((p) => p[1]).filter((v) => v != null)
-
     const limitField = METRIC_TO_FIELD[metric]
     const limitVal = limitField ? limits[limitField] : null
+    const { slots, fromMs, toMs, canClassifyExcluded, schoolHoursActive } = trendSlots
 
-    const avgVal = isAqi
-      ? (data.pollutantStats?.Aqi?.avg != null ? Math.round(data.pollutantStats.Aqi.avg) : null)
-      : (vals.length ? Math.round(vals.reduce((s, v) => s + v, 0) / vals.length) : null)
-
+    const points = slots.map((s) => [s.time, s.value, s.instant ? 1 : 0])
+    const vals = slots.map((s) => s.value).filter((v) => v != null)
     const maxVal = vals.length ? Math.max(...vals) : 0
 
-    // Category bands from the served table, not a private EPA copy.
-    const bandAreas = isAqi
-      ? categories
-        .filter((c) => c.min <= maxVal + 20)
-        .map((c) => [
-          { yAxis: c.min, itemStyle: { color: hexToRgba(CATEGORY_COLORS[c.name], 0.1) } },
-          { yAxis: c.max },
-        ])
-      : []
-
+    // Day dividers across excluded stretches, so a long excluded run reads as
+    // "a new day starts here" rather than a sensor fault.
     const markLineData = []
-    if (avgVal != null) {
-      markLineData.push({
-        yAxis: avgVal,
-        lineStyle: { type: 'solid', color: ec.label, width: 1, opacity: 0.6 },
-        label: { formatter: `Average ${avgVal}`, color: ec.label, position: 'insideStartTop', fontSize: 11, fontWeight: 600 },
-      })
+    if (canClassifyExcluded && schoolHoursActive) {
+      let lastDay = null
+      for (const s of slots) {
+        if (s.state !== 'excluded') { lastDay = null; continue }
+        const day = dayjs(s.time).format('YYYY-MM-DD')
+        if (day !== lastDay) {
+          markLineData.push({ xAxis: s.time, label: { show: false }, lineStyle: { color: ec.split, type: 'solid', width: 1 } })
+          lastDay = day
+        }
+      }
     }
     if (limitVal) {
+      // Muted neutral, not red — red is a category color in this scale now
+      // and must not also mean "this is a threshold".
       markLineData.push({
         yAxis: limitVal,
-        lineStyle: { type: 'dashed', color: CATEGORY_COLORS['Very Unhealthy'] || '#dc2626', width: 1.5 },
-        label: { formatter: `Limit ${limitVal}`, color: CATEGORY_COLORS['Very Unhealthy'] || '#dc2626', position: 'insideEndTop', fontSize: 11, fontWeight: 600 },
+        lineStyle: { type: 'dashed', color: ec.label, width: 1.5 },
+        label: { formatter: `Limit ${limitVal}`, color: ec.label, position: 'insideEndTop', fontSize: 11, fontWeight: 600 },
       })
     }
 
-    // The true peak of the period, from the per-bucket maxima the backend keeps.
-    const peakBucket = isAqi && data.buckets.length
-      ? data.buckets.reduce((a, b) => ((b.aqiMax ?? 0) > (a.aqiMax ?? 0) ? b : a))
-      : null
+    // Endpoint marker: the last real reading, colored by its own DENR
+    // category. The only direct label on the chart — the axis and tooltip
+    // carry everything else.
+    const lastReal = [...slots].reverse().find((s) => s.value != null)
+    const lastCategory = lastReal && isAqi ? categories.find((c) => lastReal.value >= c.min && lastReal.value <= c.max) : null
+    const endpointColor = lastCategory ? CATEGORY_COLORS[lastCategory.name] : ec.line
+
+    // Coverage rail: one bar per slot below the plot area, sharing its time
+    // axis — filled where a reading exists (dimmer if instant-basis, i.e.
+    // NowCast wasn't available yet), a flat neutral where the slot is
+    // excluded by design, hatched where a reading is genuinely missing.
+    const railData = slots.map((s) => {
+      if (s.state === 'data') {
+        return { value: [s.time, 1], itemStyle: { color: s.instant ? hexToRgba(ec.line, 0.35) : ec.line } }
+      }
+      if (s.state === 'excluded') {
+        return { value: [s.time, 1], itemStyle: { color: ec.split } }
+      }
+      return {
+        value: [s.time, 1],
+        itemStyle: {
+          color: 'transparent',
+          borderColor: ec.axis,
+          borderWidth: 1,
+          decal: { symbol: 'rect', dashArrayX: [1, 0], dashArrayY: [2, 4], rotation: Math.PI / 4, color: ec.axis },
+        },
+      }
+    })
 
     return {
-      grid: { left: 48, right: 24, top: 24, bottom: 64 },
+      grid: [
+        { left: 48, right: 24, top: 24, bottom: 92 },
+        { left: 48, right: 24, bottom: 56, height: 10 },
+      ],
+      visualMap: isAqi ? [
+        {
+          show: false, type: 'piecewise', dimension: 1, seriesIndex: 0,
+          pieces: categories.map((c) => ({ min: c.min, max: c.max, color: CATEGORY_COLORS[c.name] })),
+        },
+        {
+          show: false, type: 'piecewise', dimension: 2, seriesIndex: 0,
+          pieces: [{ min: 0, max: 0, opacity: 1 }, { min: 1, max: 1, opacity: 0.45 }],
+        },
+      ] : undefined,
       tooltip: {
         trigger: 'axis',
         backgroundColor: ec.tooltipBg,
@@ -304,55 +433,78 @@ const Analytics = () => {
         textStyle: { color: ec.text },
         axisPointer: { type: 'line', label: { formatter: (p) => dayjs(p.value).format('MMM D, h:mm A') } },
         formatter: (params) => {
-          const p = params[0]
+          const p = params.find((x) => x.seriesIndex === 0) || params[0]
+          const slot = slots[p.dataIndex]
           const t = dayjs(p.value[0]).format('MMM D, h:mm A')
+          const val = p.value[1]
+          if (val == null) {
+            const reason = slot?.state === 'excluded' ? 'outside school hours' : 'no reading'
+            return `${t}<br/><span style="opacity:.7">${reason}</span>`
+          }
           const unit = m.unit ? ` ${m.unit}` : ''
-          return `${t}<br/><b>${p.value[1]}</b>${unit}<br/><span style="opacity:.7">interval average</span>`
+          const cat = isAqi ? categories.find((c) => val >= c.min && val <= c.max) : null
+          const catLine = cat ? `<br/><span style="color:${CATEGORY_COLORS[cat.name]};font-weight:600">${cat.name}</span>` : ''
+          const instantLine = slot?.instant ? '<br/><span style="opacity:.7">instant reading — NowCast unavailable yet</span>' : ''
+          return `${t}<br/><b>${val}</b>${unit}${catLine}${instantLine}`
         },
       },
-      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 18, bottom: 18 }],
-      xAxis: {
-        type: 'time',
-        axisLine: { lineStyle: { color: ec.axis } },
-        axisLabel: { color: ec.label, hideOverlap: true },
-      },
-      yAxis: {
-        type: 'value',
-        min: 0,
-        max: isAqi ? Math.max(150, Math.ceil((maxVal + 20) / 50) * 50) : undefined,
-        name: m.unit || (isAqi ? 'AQI' : ''),
-        nameTextStyle: { color: ec.label, align: 'left' },
-        nameGap: 12,
-        axisLabel: { color: ec.label },
-        splitLine: { lineStyle: { color: ec.split } },
-      },
-      series: [{
-        name: m.label,
-        type: 'line',
-        smooth: true,
-        showSymbol: false,
-        symbol: 'circle',
-        symbolSize: 8,
-        data: points,
-        lineStyle: { width: 2.5, color: ec.line },
-        itemStyle: { color: ec.line },
-        markArea: bandAreas.length ? { silent: true, data: bandAreas } : undefined,
-        markLine: markLineData.length ? { silent: true, symbol: 'none', data: markLineData } : undefined,
-        markPoint: peakBucket ? {
-          symbolSize: 46,
-          data: [{
-            name: 'Peak',
-            coord: [new Date(peakBucket.time).getTime(), peakBucket.aqi],
-            itemStyle: { color: CATEGORY_COLORS['Very Unhealthy'] || '#dc2626' },
-            label: {
-              formatter: `Peak\n${peakBucket.aqiMax}`,
-              color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 12,
-            },
-          }],
-        } : undefined,
-      }],
+      dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }, { type: 'slider', height: 18, bottom: 18, xAxisIndex: [0, 1] }],
+      xAxis: [
+        {
+          type: 'time', gridIndex: 0, min: fromMs, max: toMs,
+          axisLine: { lineStyle: { color: ec.axis } },
+          axisLabel: { color: ec.label, hideOverlap: true },
+        },
+        {
+          type: 'time', gridIndex: 1, min: fromMs, max: toMs,
+          axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false },
+          axisPointer: { show: false },
+        },
+      ],
+      yAxis: [
+        {
+          type: 'value', gridIndex: 0,
+          min: 0,
+          max: isAqi ? Math.max(150, Math.ceil((maxVal + 20) / 50) * 50) : undefined,
+          name: m.unit || (isAqi ? 'AQI' : ''),
+          nameTextStyle: { color: ec.label, align: 'left' },
+          nameGap: 12,
+          axisLabel: { color: ec.label },
+          splitLine: { lineStyle: { color: ec.split } },
+        },
+        {
+          type: 'value', gridIndex: 1, min: 0, max: 1,
+          axisLine: { show: false }, axisTick: { show: false }, axisLabel: { show: false }, splitLine: { show: false },
+        },
+      ],
+      series: [
+        {
+          name: m.label,
+          type: 'line',
+          showSymbol: false,
+          connectNulls: false,
+          data: points,
+          lineStyle: { width: 2.5, cap: 'round', join: 'round', color: isAqi ? undefined : ec.line },
+          itemStyle: { color: isAqi ? undefined : ec.line },
+          markLine: markLineData.length ? { silent: true, symbol: 'none', data: markLineData } : undefined,
+          markPoint: lastReal ? {
+            symbolSize: 10,
+            data: [{
+              coord: [lastReal.time, lastReal.value],
+              itemStyle: { color: endpointColor, borderColor: ec.tooltipBg, borderWidth: 2 },
+              label: { formatter: `latest ${lastReal.value}`, color: ec.text, fontSize: 11, fontWeight: 700, position: 'top' },
+            }],
+          } : undefined,
+        },
+        {
+          type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+          barWidth: '100%', barGap: '-100%',
+          data: railData,
+          silent: true,
+        },
+      ],
     }
-  }, [data, metric, ec, limits, categories])
+  }, [data, trendSlots, metric, ec, limits, categories])
 
   // Category mix per day. Replaces the donut, which with NowCast smoothing was a
   // large single-colour circle: a stacked bar shows the same mix changing over
@@ -632,13 +784,13 @@ const Analytics = () => {
               </Typography>
 
               <Grid container spacing={1.5} alignItems="center" sx={{ mt: 0.5, mb: hasData ? 2 : 0 }}>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} md={2.2}>
                   <DateTimePicker label="From" value={from} onChange={(v) => { setFrom(v); setLiveMode(false) }} slotProps={{ textField: { fullWidth: true, size: 'small' } }} />
                 </Grid>
-                <Grid item xs={12} md={3}>
+                <Grid item xs={12} md={2.2}>
                   <DateTimePicker label="To" value={to} onChange={(v) => { setTo(v); setLiveMode(false) }} disabled={liveMode} slotProps={{ textField: { fullWidth: true, size: 'small' } }} />
                 </Grid>
-                <Grid item xs={6} md={2}>
+                <Grid item xs={6} md={1.7}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Room</InputLabel>
                     <Select label="Room" value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
@@ -647,7 +799,7 @@ const Analytics = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={6} md={2}>
+                <Grid item xs={6} md={1.7}>
                   <FormControl fullWidth size="small">
                     <InputLabel>Detail</InputLabel>
                     <Select label="Detail" value={granularity} onChange={(e) => setGranularity(e.target.value)}>
@@ -659,7 +811,15 @@ const Analytics = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={12} md={2} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                <Grid item xs={6} md={1.7}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Metric</InputLabel>
+                    <Select label="Metric" value={metric} onChange={(e) => setMetric(e.target.value)}>
+                      {METRIC_OPTIONS.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} md={2.5} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                   <FormControlLabel
                     sx={{ m: 0 }}
                     control={<Switch size="small" checked={schoolHours} onChange={(e) => setSchoolHours(e.target.checked)} />}
@@ -782,7 +942,8 @@ const Analytics = () => {
                         {(METRIC_OPTIONS.find((o) => o.value === metric) || METRIC_OPTIONS[0]).label} over time
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        Interval averages{schoolHours ? ', school hours only' : ''}. Background bands are DENR categories; the dashed line is the alert limit.
+                        Interval averages{schoolHours ? ', school hours only' : ''}.
+                        {metric === 'aqi' ? ' The line is coloured by DENR category; the dashed line is the alert limit.' : ' The dashed line is the alert limit.'}
                       </Typography>
                       {worstBucket && (
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -790,14 +951,25 @@ const Analytics = () => {
                         </Typography>
                       )}
                     </Box>
-                    <FormControl size="small" sx={{ minWidth: 150 }}>
-                      <InputLabel>Metric</InputLabel>
-                      <Select label="Metric" value={metric} onChange={(e) => setMetric(e.target.value)}>
-                        {METRIC_OPTIONS.map((o) => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
-                      </Select>
-                    </FormControl>
+                    <ToggleButtonGroup size="small" exclusive value={trendView} onChange={(e, v) => { if (v) setTrendView(v) }}>
+                      <ToggleButton value="chart" sx={{ textTransform: 'none', px: 1.5 }}>Chart</ToggleButton>
+                      <ToggleButton value="table" sx={{ textTransform: 'none', px: 1.5 }}>Table</ToggleButton>
+                    </ToggleButtonGroup>
                   </Box>
-                  {trendOption && <ReactECharts option={trendOption} style={{ height: 340, marginTop: 8 }} notMerge />}
+                  {trendView === 'chart' ? (
+                    <>
+                      {trendOption && <ReactECharts option={trendOption} style={{ height: 380, marginTop: 8 }} notMerge />}
+                      {metric === 'aqi' && <CategoryLegend categories={categories} />}
+                    </>
+                  ) : trendSlots && (
+                    <TrendTable
+                      slots={trendSlots.slots}
+                      categories={categories}
+                      limits={limits}
+                      isAqi={metric === 'aqi'}
+                      unit={(METRIC_OPTIONS.find((o) => o.value === metric) || METRIC_OPTIONS[0]).unit}
+                    />
+                  )}
                 </CardContent>
               </Card>
 
@@ -996,6 +1168,62 @@ const RoomRow = ({ room, rank, periodHours }) => {
     </div>
   )
 }
+
+// Colour is the only category cue on the trend line now, so it can't be the
+// only way to read one — a horizontal scale legend, generated from the same
+// served categories the visualMap pieces come from.
+const CategoryLegend = ({ categories }) => (
+  <div className="aqi-legend">
+    {categories.map((c) => (
+      <div key={c.name} className="aqi-legend-item">
+        <span className="aqi-legend-swatch" style={{ background: CATEGORY_COLORS[c.name] }} />
+        <span className="aqi-legend-name">{c.name}</span>
+        <span className="aqi-legend-range">{c.min}–{c.max}</span>
+      </div>
+    ))}
+  </div>
+)
+
+// Table-view twin for the trend chart, so no value is colour-only. Same
+// conventions as PollutantStatsTable below: plain MUI Table, bold headers,
+// right-aligned tabular-nums numbers, em dash for nulls.
+const TrendTable = ({ slots, categories, limits, isAqi, unit }) => (
+  <Box sx={{ maxHeight: 420, overflow: 'auto', mt: 1 }}>
+    <Table size="small" stickyHeader>
+      <TableHead>
+        <TableRow>
+          <TableCell sx={{ fontWeight: 700 }}>Time</TableCell>
+          <TableCell align="right" sx={{ fontWeight: 700 }}>Value</TableCell>
+          {isAqi && <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>}
+          {isAqi && <TableCell sx={{ fontWeight: 700 }}>Driver</TableCell>}
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {slots.map((s) => {
+          const cat = isAqi && s.value != null ? categories.find((c) => s.value >= c.min && s.value <= c.max) : null
+          return (
+            <TableRow key={s.time} hover>
+              <TableCell>{dayjs(s.time).format('MMM D, h:mm A')}</TableCell>
+              <TableCell align="right" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                {s.value == null ? '—' : `${s.value}${unit ? ` ${unit}` : ''}`}
+              </TableCell>
+              {isAqi && (
+                <TableCell>
+                  {s.value == null ? (
+                    <Chip size="small" variant="outlined" label={s.state === 'excluded' ? 'Excluded' : 'No reading'} />
+                  ) : cat ? (
+                    <Chip size="small" label={cat.name} sx={{ bgcolor: CATEGORY_COLORS[cat.name], color: '#fff', fontWeight: 600 }} />
+                  ) : '—'}
+                </TableCell>
+              )}
+              {isAqi && <TableCell>{s.bucket ? bucketDriver(s.bucket, limits) : '—'}</TableCell>}
+            </TableRow>
+          )
+        })}
+      </TableBody>
+    </Table>
+  </Box>
+)
 
 const PollutantStatsTable = ({ stats, limits }) => (
   <Table size="small">

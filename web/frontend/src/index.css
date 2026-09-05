@@ -3696,6 +3696,39 @@ input, select {
   color: var(--color-text-secondary);
 }
 
+/* ---- Analytics: AQI trend chart category legend ---- */
+.aqi-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.aqi-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.aqi-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.aqi-legend-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.aqi-legend-range {
+  color: var(--color-text-secondary);
+}
+
 .dash-kpi-clickable {
   cursor: pointer;
 }

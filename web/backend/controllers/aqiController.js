@@ -240,6 +240,7 @@ const getAnalytics = async (req, res) => {
             avgTemp: { $avg: '$Temperature' },
             avgHum:  { $avg: '$Humidity' },
             count:   { $sum: 1 },
+            instantCount: { $sum: { $cond: [{ $eq: ['$aqiBasis', 'instant'] }, 1, 0] } },
         }},
         { $sort: { _id: 1 } }
       ]),
@@ -534,6 +535,7 @@ const getAnalytics = async (req, res) => {
         aqi: Math.round(b.avgAqi),
         aqiMax: Math.round(b.maxAqi),
         count: b.count,
+        instantCount: b.instantCount,
         pm25: round(b.avgPM25),
         pm10: round(b.avgPM10),
         co2: Math.round(b.avgCO2),
