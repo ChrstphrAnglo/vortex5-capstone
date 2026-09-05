@@ -3,6 +3,14 @@ const Device = require('../models/DeviceModel')
 const getVisibleDeviceIds = require('../utils/visibleDevices')
 const { resolveLimits } = require('../utils/thresholdLimits')
 const { AQI_CATEGORIES, categoryFor } = require('../config/airQualityBands')
+const { evaluateReading } = require('../utils/alertEvaluator')
+const { TZ } = require('../config/appTime')
+const {
+  SCHOOL_HOURS,
+  describeSchoolHours,
+  schoolHoursStages,
+  expectedMinutes,
+} = require('../config/schoolHours')
 
 // Categories and limits come from config/airQualityBands.js. This file used to
 // carry a private copy of both, which is how the API ended up emitting US EPA
@@ -42,27 +50,47 @@ const getLatestPerDevice = async (req, res) => {
 // Per-pollutant fields we compute statistics for.
 const POLLUTANT_FIELDS = ['Aqi', 'PM1', 'PM25', 'PM10', 'TVOC', 'CO2', 'Formaldehyde', 'Temperature', 'Humidity']
 
-// Build a $group spec that computes avg/min/max/std for every pollutant field.
+// Fields the exceedance report covers. One-sided only: Temperature and Humidity
+// are two-sided, so "hours over the limit" would be a different question with a
+// different denominator. PM2.5 and PM10 stay even though they no longer raise
+// their own alerts, because an exceedance REPORT against DENR is exactly where a
+// school needs them.
+const EXCEEDANCE_FIELDS = ['Aqi', 'PM25', 'PM10', 'CO2', 'TVOC', 'Formaldehyde']
+
+// Build a $group spec computing avg/min/max/std and the 5th/95th percentiles
+// for every pollutant field.
+//
+// Percentiles rather than min/max for the on-screen table: both extremes are
+// single samples, so a lone sensor glitch sets them. $percentile needs MongoDB
+// 7.0+ (deployment is 8.0), and 'approximate' is the only method the server
+// offers as an accumulator.
 function buildStatsGroup() {
   const spec = { _id: null, count: { $sum: 1 } }
   for (const f of POLLUTANT_FIELDS) {
-    spec[`${f}_avg`] = { $avg: `$${f}` }
-    spec[`${f}_min`] = { $min: `$${f}` }
-    spec[`${f}_max`] = { $max: `$${f}` }
-    spec[`${f}_std`] = { $stdDevPop: `$${f}` }
+    spec[f + '_avg'] = { $avg: '$' + f }
+    spec[f + '_min'] = { $min: '$' + f }
+    spec[f + '_max'] = { $max: '$' + f }
+    spec[f + '_std'] = { $stdDevPop: '$' + f }
+    spec[f + '_pct'] = { $percentile: { input: '$' + f, p: [0.05, 0.95], method: 'approximate' } }
   }
   return spec
 }
 
-// Convert a raw stats agg result into { field: {avg,min,max,std} }.
-function shapeStats(row) {
+// Convert a raw stats agg result into { field: {avg,min,max,std,p05,p95} }.
+// min/max stay in the payload even though the table now shows percentiles —
+// the compliance report and any future consumer may still want the extremes.
+function shapeStats(row, hoursOverByField = {}) {
   const out = {}
   for (const f of POLLUTANT_FIELDS) {
+    const pct = row?.[f + '_pct'] || []
     out[f] = {
-      avg: round(row?.[`${f}_avg`]),
-      min: round(row?.[`${f}_min`]),
-      max: round(row?.[`${f}_max`]),
-      std: round(row?.[`${f}_std`]),
+      avg: round(row?.[f + '_avg']),
+      min: round(row?.[f + '_min']),
+      max: round(row?.[f + '_max']),
+      std: round(row?.[f + '_std']),
+      p05: round(pct[0]),
+      p95: round(pct[1]),
+      hoursOver: hoursOverByField[f] ?? null,
     }
   }
   return out
@@ -70,15 +98,52 @@ function shapeStats(row) {
 
 const round = (v, d = 1) => v == null ? null : Math.round(v * 10 ** d) / 10 ** d
 
-// Descriptive analytics — single bundled payload for the front-end.
-// Admin-only. Features: aggregation/stats, trend, pattern heatmap, exceedance
-// reporting, comparative analysis, AQI distribution.
-const getAnalytics = async (req, res) => {
-  const empty = {
-    kpis: { avg: 0, max: 0, min: 0, count: 0, pctGood: 0, avgCategory: 'Good' },
-    buckets: [], categories: [], byDevice: [], heatmap: [], recent: [],
-    pollutantStats: {}, exceedances: [], comparison: null,
+// Map a stored Aqi to its DENR category name inside an aggregation, using the
+// canonical bounds rather than a second copy of the table.
+function categoryExpr() {
+  const last = AQI_CATEGORIES[AQI_CATEGORIES.length - 1]
+  return {
+    $switch: {
+      branches: AQI_CATEGORIES.slice(0, -1).map((c) => ({
+        case: { $lte: ['$Aqi', c.max] },
+        then: c.name,
+      })),
+      default: last.name,
+    },
   }
+}
+
+// Descriptive analytics — single bundled payload for the front-end. Admin-only.
+//
+// Every date operator carries the Asia/Manila timezone (config/appTime.js).
+// Without it Mongo answers in UTC, which put a 10 AM classroom peak in the 2 AM
+// heatmap cell and filed every reading after 4 PM under the previous day.
+//
+// Every pipeline also spreads the same school-hours stages, composed once. That
+// is deliberate: a filter applied to some panels and not others is worse than no
+// filter, because two panels then disagree without saying so.
+const getAnalytics = async (req, res) => {
+  const schoolActive = req.query.schoolHours !== 'false'
+  const emptyMeta = {
+    timezone: TZ,
+    schoolHours: {
+      active: schoolActive,
+      label: describeSchoolHours(),
+      days: SCHOOL_HOURS.days,
+      startHour: SCHOOL_HOURS.startHour,
+      endHour: SCHOOL_HOURS.endHour,
+    },
+  }
+  const empty = {
+    meta: emptyMeta,
+    kpis: { avg: 0, max: 0, min: 0, count: 0, pctGood: 0, avgCategory: 'Good', coverage: 0 },
+    coverage: { pct: 0, observedMinutes: 0, expectedMinutes: 0, low: true, perDevice: [] },
+    basisMix: [], spansStandardChange: false,
+    buckets: [], categories: [], categoriesByDay: [], byDevice: [], heatmap: [],
+    heatmapDays: 0, recent: [], pollutantStats: {}, exceedances: [],
+    comparison: null, rooms: { needsAttention: [], okCount: 0, okRooms: [] },
+  }
+
   try {
     const userDeviceIds = await getVisibleDeviceIds(req.user)
     if (userDeviceIds.length === 0) return res.status(200).json(empty)
@@ -87,7 +152,9 @@ const getAnalytics = async (req, res) => {
       return res.status(200).json(empty)
     }
 
-    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 24 * 3600 * 1000)
+    // Default range is 7 days, not 24 hours: with the school-hours filter on, a
+    // single day holds at most ten usable hours and on a weekend holds none.
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 7 * 86400 * 1000)
     const to   = req.query.to   ? new Date(req.query.to)   : new Date()
     const rangeMs = to - from
 
@@ -96,9 +163,14 @@ const getAnalytics = async (req, res) => {
       : { deviceId: { $in: userDeviceIds } }
     const match = { ...deviceFilter, createdAt: { $gte: from, $lte: to } }
 
+    const deviceCount = req.query.deviceId ? 1 : userDeviceIds.length
+
+    // Composed ONCE and spread into every pipeline below.
+    const sh = schoolHoursStages(schoolActive, TZ)
+    const base = (m) => [{ $match: m }, ...sh]
+
     // ----- Trend bucket size -----
-    // Honour an explicit granularity, else auto-pick for ~60-100 points.
-    const granularity = req.query.granularity // 'hour' | 'day' | 'week' | 'month' | undefined
+    const granularity = req.query.granularity
     const bucketMs = granularity === 'hour'  ? 3600 * 1000
                   : granularity === 'day'   ? 86400 * 1000
                   : granularity === 'week'  ? 7 * 86400 * 1000
@@ -108,11 +180,16 @@ const getAnalytics = async (req, res) => {
                   : rangeMs <= 7 * 86400 * 1000 ? 3600 * 1000
                   : 6 * 3600 * 1000
 
-    // Heatmap always uses last 7 days for a meaningful hour×weekday picture.
-    const heatmapFrom = new Date(Date.now() - 7 * 86400 * 1000)
-    const heatmapMatch = { ...deviceFilter, createdAt: { $gte: heatmapFrom } }
+    // Sub-day buckets can use epoch modulo: Asia/Manila is a whole-hour offset,
+    // so 5/15/60-minute boundaries land identically in UTC and local time.
+    // Day and larger MUST use $dateTrunc with the timezone, or a "day" runs
+    // 08:00-08:00 Manila instead of midnight to midnight.
+    const useDateTrunc = bucketMs >= 86400 * 1000
+    const trunc = { day: 'day', week: 'week', month: 'month' }[granularity] || 'day'
+    const bucketId = useDateTrunc
+      ? { $dateTrunc: { date: '$createdAt', unit: trunc, timezone: TZ } }
+      : { $toDate: { $subtract: [{ $toLong: '$createdAt' }, { $mod: [{ $toLong: '$createdAt' }, bucketMs] }] } }
 
-    // Previous equal-length window (for comparative analysis).
     const prevFrom = new Date(from.getTime() - rangeMs)
     const prevMatch = { ...deviceFilter, createdAt: { $gte: prevFrom, $lt: from } }
 
@@ -121,72 +198,95 @@ const getAnalytics = async (req, res) => {
 
     const [
       statsAgg, prevStatsAgg, weekdayStatsAgg, weekendStatsAgg,
-      bucketsAgg, byDeviceAgg, heatmapAgg, hourlyAgg, categoryAgg, recent,
+      bucketsAgg, byDeviceAgg, deviceHourlyAgg, heatmapAgg, hourlyAgg,
+      categoryByDayAgg, deviceCategoryAgg, coverageAgg, basisAgg, recent,
     ] = await Promise.all([
-      // 1. Per-pollutant stats for the current range
-      AqiModel.aggregate([{ $match: match }, { $group: buildStatsGroup() }]),
+      // Per-pollutant stats for the current range
+      AqiModel.aggregate([...base(match), { $group: buildStatsGroup() }]),
 
-      // 5a. Same stats for previous equal window
-      AqiModel.aggregate([{ $match: prevMatch }, { $group: buildStatsGroup() }]),
+      // Same stats for the previous equal-length window
+      AqiModel.aggregate([...base(prevMatch), { $group: buildStatsGroup() }]),
 
-      // 5b. Weekday-only stats (Mon–Fri => dayOfWeek 2..6)
+      // Weekday-only (Mon-Fri) and weekend-only stats, in LOCAL time. Before the
+      // timezone fix these split on UTC days, so every Manila evening reading
+      // landed on the wrong side.
       AqiModel.aggregate([
-        { $match: match },
-        { $addFields: { dow: { $dayOfWeek: '$createdAt' } } },
+        ...base(match),
+        { $addFields: { dow: { $dayOfWeek: { date: '$createdAt', timezone: TZ } } } },
         { $match: { dow: { $gte: 2, $lte: 6 } } },
         { $group: buildStatsGroup() },
       ]),
-
-      // 5c. Weekend-only stats (Sun=1, Sat=7)
       AqiModel.aggregate([
-        { $match: match },
-        { $addFields: { dow: { $dayOfWeek: '$createdAt' } } },
+        ...base(match),
+        { $addFields: { dow: { $dayOfWeek: { date: '$createdAt', timezone: TZ } } } },
         { $match: { $or: [{ dow: 1 }, { dow: 7 }] } },
         { $group: buildStatsGroup() },
       ]),
 
-      // 2. Trend buckets
+      // Trend buckets. avgAqi is what the chart plots; maxAqi is kept so the
+      // true period peak can be marked separately rather than plotting a series
+      // of maxima and calling its maximum the peak.
       AqiModel.aggregate([
-        { $match: match },
+        ...base(match),
         { $group: {
-            _id: { $toDate: { $subtract: [
-              { $toLong: '$createdAt' },
-              { $mod: [{ $toLong: '$createdAt' }, bucketMs] }
-            ] }},
+            _id: bucketId,
             avgAqi:  { $avg: '$Aqi' },
-            maxAqi:  { $max: '$Aqi' },   // peak AQI within the bucket (for the trend line)
+            maxAqi:  { $max: '$Aqi' },
             avgPM25: { $avg: '$PM25' },
             avgPM10: { $avg: '$PM10' },
             avgCO2:  { $avg: '$CO2' },
             avgTVOC: { $avg: '$TVOC' },
             avgHCHO: { $avg: '$Formaldehyde' },
             avgTemp: { $avg: '$Temperature' },
-            avgHum:  { $avg: '$Humidity' }
+            avgHum:  { $avg: '$Humidity' },
+            count:   { $sum: 1 },
         }},
         { $sort: { _id: 1 } }
       ]),
 
-      // Per-device averages
+      // Per-device summary
       AqiModel.aggregate([
-        { $match: match },
+        ...base(match),
         { $group: { _id: '$deviceId', avgAqi: { $avg: '$Aqi' }, maxAqi: { $max: '$Aqi' }, count: { $sum: 1 } } },
         { $sort: { avgAqi: -1 } }
       ]),
 
-      // 3. Heatmap (hour × weekday)
+      // Per-device hourly means. Fed to utils/alertEvaluator so the rooms list
+      // uses the SAME rule as live alerting rather than a second evaluation path.
       AqiModel.aggregate([
-        { $match: heatmapMatch },
+        ...base(match),
         { $group: {
-            _id: { dow: { $dayOfWeek: '$createdAt' }, hour: { $hour: '$createdAt' } },
+            _id: { deviceId: '$deviceId', hour: { $dateTrunc: { date: '$createdAt', unit: 'hour', timezone: TZ } } },
+            Aqi:          { $avg: '$Aqi' },
+            PM1:          { $avg: '$PM1' },
+            PM25:         { $avg: '$PM25' },
+            PM10:         { $avg: '$PM10' },
+            CO2:          { $avg: '$CO2' },
+            TVOC:         { $avg: '$TVOC' },
+            Formaldehyde: { $avg: '$Formaldehyde' },
+            Temperature:  { $avg: '$Temperature' },
+            Humidity:     { $avg: '$Humidity' },
+        }}
+      ]),
+
+      // Heatmap (hour x weekday) in LOCAL time, over the selected range rather
+      // than a private 7-day window that silently disagreed with the picker.
+      AqiModel.aggregate([
+        ...base(match),
+        { $group: {
+            _id: {
+              dow:  { $dayOfWeek: { date: '$createdAt', timezone: TZ } },
+              hour: { $hour: { date: '$createdAt', timezone: TZ } },
+            },
             avgAqi: { $avg: '$Aqi' }, count: { $sum: 1 }
         }}
       ]),
 
-      // 4. Hourly buckets for exceedance reporting (count hours each pollutant crossed its limit)
+      // Hourly means for the exceedance report, truncated in LOCAL time.
       AqiModel.aggregate([
-        { $match: match },
+        ...base(match),
         { $group: {
-            _id: { $dateTrunc: { date: '$createdAt', unit: 'hour' } },
+            _id: { $dateTrunc: { date: '$createdAt', unit: 'hour', timezone: TZ } },
             Aqi:          { $avg: '$Aqi' },
             PM25:         { $avg: '$PM25' },
             PM10:         { $avg: '$PM10' },
@@ -196,89 +296,193 @@ const getAnalytics = async (req, res) => {
         }}
       ]),
 
-      // 6. AQI category distribution
+      // Category mix per local day. The overall distribution is rolled up from
+      // this in Node, so it costs one aggregation rather than two.
       AqiModel.aggregate([
-        { $match: match },
-        { $bucket: {
-            groupBy: '$Aqi',
-            boundaries: [...AQI_CATEGORIES.map(c => c.min), Infinity],
-            default: 'above-range',
-            output: { count: { $sum: 1 } }
-        }}
+        ...base(match),
+        { $group: {
+            _id: {
+              day: { $dateTrunc: { date: '$createdAt', unit: 'day', timezone: TZ } },
+              category: categoryExpr(),
+            },
+            count: { $sum: 1 }
+        }},
+        { $sort: { '_id.day': 1 } }
       ]),
 
-      // Recent readings
-      AqiModel.find(match).sort({ createdAt: -1 }).limit(100).lean(),
+      // Category mix per room, for the compliance report.
+      AqiModel.aggregate([
+        ...base(match),
+        { $group: { _id: { deviceId: '$deviceId', category: categoryExpr() }, count: { $sum: 1 } } },
+      ]),
+
+      // Coverage: distinct (device, minute) slots that hold at least one
+      // reading. Counting ROWS would be wrong here — this deployment writes
+      // several times per interval, which would report coverage above 100%.
+      AqiModel.aggregate([
+        ...base(match),
+        { $group: { _id: { d: '$deviceId', m: { $dateTrunc: { date: '$createdAt', unit: 'minute' } } } } },
+        { $group: { _id: '$_id.d', minutes: { $sum: 1 } } },
+      ]),
+
+      // Which AQI standard each reading was computed under.
+      AqiModel.aggregate([
+        ...base(match),
+        { $group: { _id: '$aqiBasis', count: { $sum: 1 } } },
+      ]),
+
+      // Recent readings. An aggregation rather than find(), so it gets the same
+      // school-hours treatment as every other panel.
+      AqiModel.aggregate([...base(match), { $sort: { createdAt: -1 } }, { $limit: 100 }]),
     ])
 
-    // ----- KPIs (derived from current stats) -----
     const statsRow = statsAgg[0] || {}
     const totalCount = statsRow.count || 0
-    // % good needs a separate quick count
-    const goodAgg = await AqiModel.aggregate([
-      { $match: match },
-      { $group: { _id: null, good: { $sum: { $cond: [{ $lte: ['$Aqi', 50] }, 1, 0] } } } }
-    ])
-    const goodCount = goodAgg[0]?.good || 0
-    const avgAqi = Math.round(statsRow.Aqi_avg || 0)
-    const kpis = {
-      avg: avgAqi,
-      max: statsRow.Aqi_max || 0,
-      min: statsRow.Aqi_min || 0,
-      count: totalCount,
-      pctGood: totalCount > 0 ? Math.round((goodCount / totalCount) * 100) : 0,
-      avgCategory: aqiCategory(avgAqi),
+
+    // ----- Category distribution, rolled up from the per-day mix -----
+    const dayMap = new Map()
+    const categoryTotals = Object.fromEntries(AQI_CATEGORIES.map((c) => [c.name, 0]))
+    for (const row of categoryByDayAgg) {
+      const day = row._id.day?.toISOString?.() ?? String(row._id.day)
+      if (!dayMap.has(day)) dayMap.set(day, { day: row._id.day, counts: {}, total: 0 })
+      const entry = dayMap.get(day)
+      entry.counts[row._id.category] = (entry.counts[row._id.category] || 0) + row.count
+      entry.total += row.count
+      if (row._id.category in categoryTotals) categoryTotals[row._id.category] += row.count
     }
-
-    // ----- Category distribution -----
-    const lastIndex = AQI_CATEGORIES.length - 1
-    const categories = AQI_CATEGORIES.map((cat, i) => {
-      const label = cat.name
-      // Anything past the top boundary lands in the default bucket; fold it
-      // into the top category rather than reporting it separately.
-      const bucket = categoryAgg.find(b => b._id === cat.min || (i === lastIndex && b._id === 'above-range'))
-      const count = bucket?.count || 0
-      return { label, count, pct: totalCount > 0 ? Math.round((count / totalCount) * 100) : 0 }
-    })
-
-    // ----- Per-device -----
-    const devices = await Device.find({ deviceId: { $in: userDeviceIds } }).lean()
-    const deviceMap = Object.fromEntries(devices.map(d => [d.deviceId, d]))
-    const byDevice = byDeviceAgg.map(d => ({
-      deviceId: d._id,
-      name: deviceMap[d._id]?.name || d._id,
-      room: deviceMap[d._id]?.room || '',
-      avgAqi: Math.round(d.avgAqi),
-      maxAqi: d.maxAqi,
-      count: d.count,
+    const categoriesByDay = [...dayMap.values()]
+    const categories = AQI_CATEGORIES.map((cat) => ({
+      label: cat.name,
+      count: categoryTotals[cat.name] || 0,
+      pct: totalCount > 0 ? Math.round((categoryTotals[cat.name] / totalCount) * 100) : 0,
     }))
 
-    // ----- Heatmap -----
-    const heatmap = heatmapAgg.map(h => ({
-      dow: h._id.dow, hour: h._id.hour, avgAqi: Math.round(h.avgAqi),
-    }))
+    // pctGood is the share in the first category, whatever it is called and
+    // wherever its ceiling sits — not a hardcoded "Aqi <= 50".
+    const goodCount = categoryTotals[AQI_CATEGORIES[0].name] || 0
 
-    // ----- Exceedances (feature 4) -----
-    // Each hourly bucket = ~1 hour. Count buckets where the hour's average exceeded the limit.
-    const totalHours = hourlyAgg.length
-    // One-sided fields only: hourlyAgg above does not carry Temperature or
-    // Humidity, and both are two-sided, so "hours over the limit" would need a
-    // second aggregation and a different question. PM2.5/PM10 stay here even
-    // though they no longer alert on their own — as an exceedance REPORT they
-    // are exactly what a school needs to show against the DENR standard.
-    const exceedanceFields = ['Aqi', 'PM25', 'PM10', 'CO2', 'TVOC', 'Formaldehyde']
-    const exceedances = exceedanceFields.map(f => {
-      const hours = hourlyAgg.filter(h => h[f] != null && h[f] > limits[f]).length
+    const avgAqi = Math.round(statsRow.Aqi_avg || 0)
+
+    // ----- Coverage -----
+    const expectedPerDevice = expectedMinutes(from, to, { active: schoolActive, tz: TZ })
+    const observedByDevice = Object.fromEntries(coverageAgg.map((c) => [c._id, c.minutes]))
+    const observedMinutes = coverageAgg.reduce((sum, c) => sum + c.minutes, 0)
+    const expectedTotal = expectedPerDevice * deviceCount
+    const coveragePct = expectedTotal > 0
+      ? Math.min(100, Math.round((observedMinutes / expectedTotal) * 100))
+      : 0
+
+    // ----- Basis mix: which AQI standard the history was computed under -----
+    const basisTotal = basisAgg.reduce((sum, b) => sum + b.count, 0)
+    const basisMix = basisAgg.map((b) => ({
+      // Rows written before the DENR reset have no aqiBasis at all.
+      basis: b._id || 'legacy',
+      count: b.count,
+      pct: basisTotal > 0 ? Math.round((b.count / basisTotal) * 100) : 0,
+    })).sort((a, b) => b.count - a.count)
+    const legacyCount = basisMix.find((b) => b.basis === 'legacy')?.count || 0
+    // Share of readings computed before the DENR reset. spansStandardChange is
+    // narrower: it means the range MIXES standards. A range that is 100% legacy
+    // sets legacyPct to 100 and spansStandardChange to false, and the page still
+    // needs to say so — so the UI keys off legacyPct, not the flag.
+    const legacyPct = basisTotal > 0 ? Math.round((legacyCount / basisTotal) * 100) : 0
+    const spansStandardChange = legacyCount > 0 && legacyCount < basisTotal
+
+    // ----- Exceedances -----
+    // The denominator is EXPECTED hours in the range, not hours that happen to
+    // hold data. A device online 3 of 24 hours that exceeded for 2 used to
+    // report 67%, indistinguishable from full uptime.
+    const expectedHours = Math.max(1, Math.round(expectedPerDevice / 60))
+    const observedHours = hourlyAgg.length
+    const hoursOverByField = {}
+    const exceedances = EXCEEDANCE_FIELDS.map((f) => {
+      const hours = hourlyAgg.filter((h) => h[f] != null && h[f] > limits[f]).length
+      hoursOverByField[f] = hours
       return {
         field: f,
         limit: limits[f],
         hours,
-        totalHours,
-        pctTime: totalHours > 0 ? Math.round((hours / totalHours) * 100) : 0,
+        observedHours,
+        expectedHours,
+        totalHours: expectedHours, // kept as an alias so older callers still read
+        pctTime: expectedHours > 0 ? Math.round((hours / expectedHours) * 100) : 0,
       }
     })
 
-    // ----- Comparative analysis (feature 5) -----
+    // ----- Devices, coverage per device, and rooms needing attention -----
+    const devices = await Device.find({ deviceId: { $in: userDeviceIds } }).lean()
+    const deviceMap = Object.fromEntries(devices.map((d) => [d.deviceId, d]))
+    const statsByDevice = Object.fromEntries(byDeviceAgg.map((d) => [d._id, d]))
+
+    // Hours over limit per device, from the SAME evaluateReading the live alerts
+    // use. Two evaluation paths would eventually disagree.
+    const roomHours = {}
+    for (const row of deviceHourlyAgg) {
+      const id = row._id.deviceId
+      if (!roomHours[id]) roomHours[id] = { total: 0, byField: {}, drivers: {} }
+      roomHours[id].total++
+      for (const hit of evaluateReading(row, limits)) {
+        roomHours[id].byField[hit.field] = (roomHours[id].byField[hit.field] || 0) + 1
+        if (hit.driver) roomHours[id].drivers[hit.driver] = (roomHours[id].drivers[hit.driver] || 0) + 1
+      }
+    }
+
+    // deviceId -> { category: count }
+    const categoryByDevice = {}
+    for (const row of deviceCategoryAgg) {
+      const id = row._id.deviceId
+      if (!categoryByDevice[id]) categoryByDevice[id] = {}
+      categoryByDevice[id][row._id.category] = row.count
+    }
+
+    const scope = req.query.deviceId ? [req.query.deviceId] : userDeviceIds
+    const byDevice = scope.map((id) => {
+      const agg = statsByDevice[id]
+      const hours = roomHours[id] || { byField: {}, drivers: {} }
+      const fields = Object.entries(hours.byField).sort((a, b) => b[1] - a[1])
+      const worst = fields[0] || null
+      const driver = worst && worst[0] === 'Aqi'
+        ? Object.entries(hours.drivers).sort((a, b) => b[1] - a[1])[0]?.[0] || null
+        : null
+      return {
+        deviceId: id,
+        name: deviceMap[id]?.name || id,
+        room: deviceMap[id]?.room || '',
+        avgAqi: agg ? Math.round(agg.avgAqi) : null,
+        maxAqi: agg ? agg.maxAqi : null,
+        count: agg ? agg.count : 0,
+        coverage: expectedPerDevice > 0
+          ? Math.min(100, Math.round(((observedByDevice[id] || 0) / expectedPerDevice) * 100))
+          : 0,
+        hoursOver: Object.fromEntries(fields),
+        worstField: worst ? worst[0] : null,
+        worstHours: worst ? worst[1] : 0,
+        driver,
+        // Share of this room readings in each DENR category, for the report.
+        categoryPct: (() => {
+          const counts = categoryByDevice[id] || {}
+          const total = Object.values(counts).reduce((a, b) => a + b, 0)
+          if (!total) return {}
+          return Object.fromEntries(
+            Object.entries(counts).map(([name, n]) => [name, Math.round((n / total) * 100)])
+          )
+        })(),
+      }
+    })
+
+    const needsAttention = byDevice
+      .filter((d) => d.count > 0 && d.worstHours > 0)
+      .sort((a, b) => b.worstHours - a.worstHours)
+    const okRooms = byDevice.filter((d) => d.count > 0 && d.worstHours === 0)
+    // Reported no readings at all in this range. Without its own group a room
+    // whose sensor is dead simply disappears from the page, which is the
+    // opposite of what someone checking on it needs.
+    const noDataRooms = byDevice.filter((d) => d.count === 0)
+
+    // ----- Comparison -----
+    // With the school-hours filter on, "weekend" is empty by definition, since
+    // the window is Mon-Fri. Say so rather than reporting a meaningless zero.
+    const weekendExcluded = schoolActive && !SCHOOL_HOURS.days.some((d) => d === 1 || d === 7)
     const comparison = {
       current:  { avgAqi: round(statsRow.Aqi_avg, 0), maxAqi: statsRow.Aqi_max || 0, count: totalCount },
       previous: {
@@ -288,15 +492,48 @@ const getAnalytics = async (req, res) => {
       },
       weekday: { avgAqi: round(weekdayStatsAgg[0]?.Aqi_avg, 0), count: weekdayStatsAgg[0]?.count || 0 },
       weekend: { avgAqi: round(weekendStatsAgg[0]?.Aqi_avg, 0), count: weekendStatsAgg[0]?.count || 0 },
+      weekendExcluded,
     }
 
+    // A heatmap needs several days before an hour-by-weekday pattern means
+    // anything; below that the UI shows why instead of a near-empty grid.
+    const heatmapDays = Math.round(rangeMs / 86400000)
+
     res.status(200).json({
-      kpis,
-      pollutantStats: shapeStats(statsRow),       // feature 1
-      buckets: bucketsAgg.map(b => ({             // feature 2
+      meta: {
+        ...emptyMeta,
+        from,
+        to,
+        deviceCount,
+        bucketMs,
+        rangeMs,
+      },
+      kpis: {
+        avg: avgAqi,
+        max: statsRow.Aqi_max || 0,
+        min: statsRow.Aqi_min || 0,
+        count: totalCount,
+        pctGood: totalCount > 0 ? Math.round((goodCount / totalCount) * 100) : 0,
+        avgCategory: aqiCategory(avgAqi),
+        coverage: coveragePct,
+      },
+      coverage: {
+        pct: coveragePct,
+        observedMinutes,
+        expectedMinutes: expectedTotal,
+        expectedPerDevice,
+        low: coveragePct < 70,
+        perDevice: byDevice.map((d) => ({ deviceId: d.deviceId, name: d.name, room: d.room, coverage: d.coverage })),
+      },
+      basisMix,
+      legacyPct,
+      spansStandardChange,
+      pollutantStats: shapeStats(statsRow, hoursOverByField),
+      buckets: bucketsAgg.map((b) => ({
         time: b._id,
         aqi: Math.round(b.avgAqi),
         aqiMax: Math.round(b.maxAqi),
+        count: b.count,
         pm25: round(b.avgPM25),
         pm10: round(b.avgPM10),
         co2: Math.round(b.avgCO2),
@@ -305,12 +542,23 @@ const getAnalytics = async (req, res) => {
         temp: round(b.avgTemp),
         humidity: round(b.avgHum),
       })),
-      heatmap,                                     // feature 3
-      exceedances,                                 // feature 4
-      comparison,                                  // feature 5
-      categories,                                  // feature 6
+      heatmap: heatmapAgg.map((h) => ({
+        dow: h._id.dow, hour: h._id.hour, avgAqi: Math.round(h.avgAqi), count: h.count,
+      })),
+      heatmapDays,
+      exceedances,
+      comparison,
+      categories,
+      categoriesByDay,
+      rooms: {
+        needsAttention,
+        okCount: okRooms.length,
+        okRooms: okRooms.map((d) => d.room || d.name),
+        noDataCount: noDataRooms.length,
+        noDataRooms: noDataRooms.map((d) => d.room || d.name),
+      },
       byDevice,
-      recent: recent.map(r => ({ ...r, category: aqiCategory(r.Aqi) })),
+      recent: recent.map((r) => ({ ...r, category: aqiCategory(r.Aqi) })),
     })
   } catch (error) {
     console.error('[analytics] error:', error)
