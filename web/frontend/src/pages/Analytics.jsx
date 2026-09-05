@@ -148,6 +148,10 @@ const Analytics = () => {
   useEffect(() => { if (!liveAllowed && liveMode) setLiveMode(false) }, [liveAllowed, liveMode])
 
   const categories = airQualityCategories()
+  // Top of the served AQI scale (the last category's ceiling), for drawing the
+  // Average AQI tile's proportion bar against the real DENR range rather than
+  // an arbitrary cutoff.
+  const aqiScaleMax = categories[categories.length - 1]?.max
 
   const ec = useMemo(() => ({
     axis: cssVar('--color-border', isDark ? '#3a4654' : '#cbd5e1'),
@@ -168,12 +172,6 @@ const Analytics = () => {
     const map = { ...airQualityLimits() }
     ;(data?.exceedances || []).forEach((e) => { map[e.field] = e.limit })
     return map
-  }, [data])
-
-  const trendDelta = useMemo(() => {
-    const cur = data?.comparison?.current?.avgAqi ?? 0
-    const prev = data?.comparison?.previous?.avgAqi ?? 0
-    return prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null
   }, [data])
 
   // The single worst interval, for the caption under the trend chart.
@@ -683,11 +681,12 @@ const Analytics = () => {
                 <>
                   <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr 1fr', md: 'repeat(4, 1fr)' },
-                    gap: 2.5,
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
+                    gap: { xs: 2.5, sm: 0 },
                     pt: 2,
                     borderTop: '1px solid',
                     borderColor: 'divider',
+                    '& > *:not(:first-of-type)': { borderLeft: { sm: '1px solid' }, borderColor: 'divider', pl: { sm: 3 } },
                   }}>
                     <SummaryFigure
                       label="Average AQI"
@@ -695,6 +694,7 @@ const Analytics = () => {
                       accent={CATEGORY_COLORS[data.kpis.avgCategory]}
                       note={data.kpis.avgCategory}
                       sub={categoryNote(data.kpis.avgCategory)}
+                      fraction={aqiScaleMax ? Math.min(1, (data.kpis.avg ?? 0) / aqiScaleMax) : null}
                     />
                     <SummaryFigure
                       label="Data coverage"
@@ -702,6 +702,7 @@ const Analytics = () => {
                       accent={data.coverage.low ? CATEGORY_COLORS['Very Unhealthy'] : undefined}
                       note={`${fmtHours(data.coverage.observedMinutes / 60)} of ${fmtHours(data.coverage.expectedMinutes / 60)} hrs observed`}
                       sub={data.coverage.low ? 'Some readings missing — results may not represent the full period.' : 'Readings cover the period.'}
+                      fraction={(data.coverage.pct ?? 0) / 100}
                     />
                     <SummaryFigure
                       label="Hours over AQI limit"
@@ -709,13 +710,7 @@ const Analytics = () => {
                       accent={(aqiExceedance?.hours ?? 0) > 0 ? CATEGORY_COLORS['Very Unhealthy'] : CATEGORY_COLORS['Good']}
                       note={`of ${aqiExceedance?.expectedHours ?? 0} hrs in period`}
                       sub={`Limit ${limits.Aqi ?? 100} AQI`}
-                    />
-                    <SummaryFigure
-                      label="Versus previous period"
-                      value={trendDelta == null ? '—' : `${Math.abs(trendDelta)}%`}
-                      accent={trendDelta == null ? undefined : trendDelta < 0 ? CATEGORY_COLORS['Good'] : CATEGORY_COLORS['Fair']}
-                      note={trendDelta == null ? 'no comparable period' : trendDelta < 0 ? 'better' : trendDelta > 0 ? 'worse' : 'unchanged'}
-                      sub={`Previous ${rangeHours < 48 ? `${rangeHours} hours` : `${Math.round(rangeHours / 24)} days`}`}
+                      fraction={aqiExceedance?.expectedHours ? Math.min(1, aqiExceedance.hours / aqiExceedance.expectedHours) : 0}
                     />
                   </Box>
 
@@ -938,12 +933,27 @@ const Analytics = () => {
 // ---------------------------------------------------------------------------
 
 // A headline figure. No icon: an icon here labels nothing the text does not.
-const SummaryFigure = ({ label, value, note, sub, accent }) => (
+// A stat tile whose fill bar is not decoration: its width is the same number
+// the tile is reporting, so "how full is the bar" and "how good is this
+// figure" are the same question. `fraction` is 0–1, or omitted for figures
+// with no natural scale to show one against.
+const SummaryFigure = ({ label, value, note, sub, accent, fraction }) => (
   <Box>
     <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>{label}</Typography>
-    <Typography sx={{ fontSize: 30, fontWeight: 800, lineHeight: 1.15, color: accent || 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+    <Typography sx={{ fontSize: 32, fontWeight: 800, lineHeight: 1.15, color: accent || 'text.primary', fontVariantNumeric: 'tabular-nums', mt: 0.25 }}>
       {value}
     </Typography>
+    {typeof fraction === 'number' && (
+      <Box sx={{ height: 5, borderRadius: 999, bgcolor: 'var(--color-border-subtle, #eef2f6)', overflow: 'hidden', mt: 1, mb: 0.75 }}>
+        <Box sx={{
+          height: '100%',
+          width: `${Math.round(Math.max(0, Math.min(1, fraction)) * 100)}%`,
+          bgcolor: accent || 'var(--color-text-tertiary, #94a3b8)',
+          borderRadius: 999,
+          transition: 'width 0.4s ease',
+        }} />
+      </Box>
+    )}
     {note && <Typography variant="body2" sx={{ fontWeight: 600, color: accent || 'text.secondary' }}>{note}</Typography>}
     {sub && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, lineHeight: 1.4 }}>{sub}</Typography>}
   </Box>
