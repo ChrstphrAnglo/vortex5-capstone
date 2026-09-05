@@ -753,13 +753,16 @@ const Analytics = () => {
                   </Typography>
 
                   {data.rooms.needsAttention.length === 0 ? (
-                    <Typography variant="body2" sx={{ fontWeight: 600, color: CATEGORY_COLORS['Good'] }}>
+                    <div className="dash-empty dash-empty-ok">
+                      <span className="dash-ok-icon">✓</span>
                       Every reporting room stayed within its limits for the whole period.
-                    </Typography>
+                    </div>
                   ) : (
-                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                      {data.rooms.needsAttention.map((r) => <RoomRow key={r.deviceId} room={r} />)}
-                    </Box>
+                    <div className="room-attn-list">
+                      {data.rooms.needsAttention.map((r, i) => (
+                        <RoomRow key={r.deviceId} room={r} rank={i + 1} periodHours={aqiExceedance?.expectedHours} />
+                      ))}
+                    </div>
                   )}
 
                   {(data.rooms.okCount > 0 || data.rooms.noDataCount > 0) && (
@@ -957,31 +960,40 @@ const AnalyticsKpiTile = ({ icon, label, value, hint, sub, accent, fraction }) =
   </div>
 )
 
-const RoomRow = ({ room }) => {
+// The list is already ranked by hours over limit (the caption above it says
+// so), so the rank number is real information, not decoration. The fill bar
+// is the same device used on the KPI tiles above: its width is worstHours as
+// a share of the period, so a glance at the bar tells you the severity
+// before reading a single word.
+const RoomRow = ({ room, rank, periodHours }) => {
   const accent = CATEGORY_COLORS['Very Unhealthy']
   const others = Object.entries(room.hoursOver || {}).filter(([f]) => f !== room.worstField)
+  const fraction = periodHours ? Math.max(0, Math.min(1, room.worstHours / periodHours)) : 0
   return (
-    <Box sx={{
-      display: 'flex', alignItems: 'baseline', gap: 1.5, flexWrap: 'wrap',
-      py: 1.25, borderBottom: '1px solid', borderColor: 'divider',
-      '&:last-of-type': { borderBottom: 0 },
-    }}>
-      <Typography sx={{ fontWeight: 700, minWidth: 120 }}>{room.room || room.name}</Typography>
-      <Typography variant="body2" sx={{ color: accent, fontWeight: 600 }}>
-        {FIELD_LABELS[room.worstField] || room.worstField}
-        {room.driver ? ` (${FIELD_LABELS[room.driver] || room.driver})` : ''}
-        {' · '}{fmtHours(room.worstHours)} hr{room.worstHours === 1 ? '' : 's'} over limit
-      </Typography>
-      {others.length > 0 && (
-        <Typography variant="caption" color="text.secondary">
-          also {others.map(([f, h]) => `${FIELD_LABELS[f] || f} ${fmtHours(h)}h`).join(', ')}
-        </Typography>
-      )}
-      <Box sx={{ flex: 1 }} />
-      <Typography variant="caption" color="text.secondary">
-        average AQI {room.avgAqi ?? '—'} · coverage {room.coverage}%
-      </Typography>
-    </Box>
+    <div className="room-attn-row">
+      <div className="room-attn-rank" style={{ background: `${accent}20`, color: accent }}>{rank}</div>
+      <div className="room-attn-body">
+        <div className="room-attn-top">
+          <span className="room-attn-name">{room.room || room.name}</span>
+          <span className="room-attn-stats">average AQI {room.avgAqi ?? '—'} · {room.coverage}% coverage</span>
+        </div>
+        <div className="room-attn-reason" style={{ color: accent }}>
+          {FIELD_LABELS[room.worstField] || room.worstField}
+          {room.driver ? ` (${FIELD_LABELS[room.driver] || room.driver})` : ''}
+          {' · '}{fmtHours(room.worstHours)} hr{room.worstHours === 1 ? '' : 's'} over limit
+        </div>
+        <div className="room-attn-bar-track">
+          <div className="room-attn-bar-fill" style={{ width: `${Math.round(fraction * 100)}%`, background: accent }} />
+        </div>
+        {others.length > 0 && (
+          <div className="room-attn-chips">
+            {others.map(([f, h]) => (
+              <span key={f} className="room-attn-chip">{FIELD_LABELS[f] || f} {fmtHours(h)}h</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }
 
